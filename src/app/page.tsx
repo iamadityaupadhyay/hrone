@@ -16,8 +16,32 @@ import {
   RefreshCw,
   Sliders,
   MoreVertical,
+  Key,
+  ShieldCheck,
 } from 'lucide-react';
 import { EmployeeProfile, PunchLog } from '@/lib/types/employee';
+
+function formatTokenExpiry(isoString?: string) {
+  if (!isoString) return 'Active (Auto-refresh)';
+  const date = new Date(isoString);
+  const diffMs = date.getTime() - Date.now();
+  if (diffMs <= 0) return 'Expired';
+
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+  const diffDays = Math.floor(diffHours / 24);
+
+  const formatted = date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+
+  if (diffDays >= 1) {
+    return `${formatted} (${diffDays}d left)`;
+  }
+  return `${formatted} (${diffHours}h left)`;
+}
 
 export default function AttendanceDashboard() {
   const [employees, setEmployees] = useState<EmployeeProfile[]>([]);
@@ -470,6 +494,31 @@ export default function AttendanceDashboard() {
                             <span className="text-slate-400">Scheduled 6-8 PM</span>
                           )}
                         </div>
+                      </div>
+                    </div>
+
+                    {/* Token & Session Expiry Details */}
+                    <div className="mt-3 pt-2.5 border-t border-slate-800/60 grid grid-cols-2 gap-2 text-[11px]">
+                      <div className="bg-slate-950/40 border border-slate-800/50 rounded-xl p-2.5 flex flex-col justify-between">
+                        <div className="flex items-center justify-between text-slate-400 mb-1">
+                          <span className="font-medium text-slate-300 flex items-center gap-1">
+                            <Key className="w-3 h-3 text-indigo-400" /> Token Expiry
+                          </span>
+                        </div>
+                        <span className="text-slate-300 font-mono text-[10px]">
+                          {formatTokenExpiry(emp.tokenExpiry)}
+                        </span>
+                      </div>
+
+                      <div className="bg-slate-950/40 border border-slate-800/50 rounded-xl p-2.5 flex flex-col justify-between">
+                        <div className="flex items-center justify-between text-slate-400 mb-1">
+                          <span className="font-medium text-slate-300 flex items-center gap-1">
+                            <ShieldCheck className="w-3 h-3 text-emerald-400" /> Refresh Expiry
+                          </span>
+                        </div>
+                        <span className="text-slate-300 font-mono text-[10px]">
+                          {formatTokenExpiry(emp.refreshTokenExpiry)}
+                        </span>
                       </div>
                     </div>
                   </div>
