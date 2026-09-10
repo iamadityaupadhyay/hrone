@@ -63,23 +63,35 @@ export async function POST(req: NextRequest) {
         });
         continue;
       } else {
-        // Auto mode based on current IST hour
-        // Check-in window (typically 9 to 10 AM)
-        const [inStartH] = (emp.schedule.checkInMin || '09:00').split(':').map(Number);
+        // Auto mode based on current IST hour and random planned punch times
+        const [inStartH] = (emp.schedule.checkInMin || '08:00').split(':').map(Number);
         const [inEndH] = (emp.schedule.checkInMax || '10:00').split(':').map(Number);
         const [outStartH] = (emp.schedule.checkOutMin || '18:00').split(':').map(Number);
         const [outEndH] = (emp.schedule.checkOutMax || '20:00').split(':').map(Number);
 
         const todayStr = istTime.split('T')[0];
+        const currentIstHHMM = istTime.split('T')[1]; // "HH:mm"
+
         const alreadyCheckedIn =
           emp.todayPunch?.date === todayStr && emp.todayPunch.checkInStatus === 'SUCCESS';
         const alreadyCheckedOut =
           emp.todayPunch?.date === todayStr && emp.todayPunch.checkOutStatus === 'SUCCESS';
 
+        const plannedIn = emp.todayPunch?.date === todayStr ? emp.todayPunch.plannedCheckIn : null;
+        const plannedOut = emp.todayPunch?.date === todayStr ? emp.todayPunch.plannedCheckOut : null;
+
+        // Check-In window (8:00 - 10:00 AM)
         if (istHour >= inStartH && istHour < inEndH && !alreadyCheckedIn) {
-          punchTypeToRun = 'CHECK_IN';
-        } else if (istHour >= outStartH && istHour < outEndH && !alreadyCheckedOut) {
-          punchTypeToRun = 'CHECK_OUT';
+          // If a random planned time was calculated, wait until that minute arrives
+          if (!plannedIn || currentIstHHMM >= plannedIn) {
+            punchTypeToRun = 'CHECK_IN';
+          }
+        }
+        // Check-Out window (6:00 - 8:00 PM)
+        else if (istHour >= outStartH && istHour < outEndH && !alreadyCheckedOut) {
+          if (!plannedOut || currentIstHHMM >= plannedOut) {
+            punchTypeToRun = 'CHECK_OUT';
+          }
         }
       }
 

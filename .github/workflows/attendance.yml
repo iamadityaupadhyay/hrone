@@ -1,0 +1,23 @@
+name: Automated Attendance Cron
+
+on:
+  schedule:
+    # 9:20 AM IST (03:50 UTC) Monday-Friday
+    - cron: '50 3 * * 1-5'
+    # 7:15 PM IST (13:45 UTC) Monday-Friday
+    - cron: '45 13 * * 1-5'
+  workflow_dispatch:
+
+jobs:
+  punch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Attendance API
+        run: |
+          echo "Triggering HROne attendance automation..."
+          # Replace with your deployed Vercel domain or call local logic
+          if [ -n "${{ secrets.VERCEL_APP_URL }}" ]; then
+            curl -s -X POST "${{ secrets.VERCEL_APP_URL }}/api/cron/trigger?action=auto"
+          else
+            echo "VERCEL_APP_URL secret not set. Skipping cloud trigger."
+          fi

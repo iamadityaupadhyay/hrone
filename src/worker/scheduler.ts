@@ -99,7 +99,7 @@ async function runSchedulerTick() {
     let todayPunch = emp.todayPunch;
     if (!todayPunch || todayPunch.date !== todayDateStr) {
       const plannedIn = generateRandomPunchTime(
-        emp.schedule.checkInMin || '09:00',
+        emp.schedule.checkInMin || '08:00',
         emp.schedule.checkInMax || '10:00'
       );
       const plannedOut = generateRandomPunchTime(

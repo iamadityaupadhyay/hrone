@@ -38,7 +38,7 @@ export default function AttendanceDashboard() {
     companyDomainCode: 'uharvest',
     refreshToken: '',
     jwtToken: '',
-    checkInMin: '09:00',
+    checkInMin: '08:00',
     checkInMax: '10:00',
     checkOutMin: '18:00',
     checkOutMax: '20:00',
@@ -443,7 +443,7 @@ export default function AttendanceDashboard() {
                               At <strong className="text-indigo-400">{emp.todayPunch.plannedCheckIn}</strong>
                             </span>
                           ) : (
-                            <span className="text-slate-400">Scheduled 9-10 AM</span>
+                            <span className="text-slate-400">Scheduled 8-10 AM</span>
                           )}
                         </div>
                       </div>
