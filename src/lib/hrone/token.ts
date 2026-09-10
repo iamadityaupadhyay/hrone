@@ -79,8 +79,16 @@ export async function refreshHROneToken(employee: EmployeeProfile): Promise<Toke
       tokenExpiry = new Date(Date.now() + data.expires_in * 1000).toISOString();
     }
 
-    // Refresh token sliding window (default 60 days)
-    refreshTokenExpiry = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString();
+    // Calculate refresh token sliding window from JWT claim (e.g. 10080 minutes = 7 days)
+    if (claims?.RefreshExpiry && typeof claims.RefreshExpiry === 'string') {
+      const minutes = parseInt(claims.RefreshExpiry, 10);
+      if (!isNaN(minutes)) {
+        refreshTokenExpiry = new Date(Date.now() + minutes * 60 * 1000).toISOString();
+      }
+    }
+    if (!refreshTokenExpiry) {
+      refreshTokenExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    }
 
     // Persist new sliding tokens in MongoDB
     await updateEmployeeTokens(
