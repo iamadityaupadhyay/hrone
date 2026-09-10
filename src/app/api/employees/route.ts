@@ -4,6 +4,8 @@ import { refreshHROneToken } from '@/lib/hrone/token';
 import { EmployeeProfile } from '@/lib/types/employee';
 import { NextRequest, NextResponse } from 'next/server';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   try {
     const employees = await getAllEmployees();
