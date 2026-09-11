@@ -5,50 +5,61 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
 
-export async function POST(req: NextRequest) {
+async function handleCronTrigger(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const action = searchParams.get('action'); // 'checkin' | 'checkout' | 'refresh_all' | 'auto'
-    const secret = req.headers.get('x-cron-secret') || searchParams.get('secret');
+    const force = searchParams.get('force') === 'true';
 
-    // Optional simple security check if CRON_SECRET is set in env
-    if (process.env.CRON_SECRET && secret !== process.env.CRON_SECRET) {
-      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    // Verify secret if CRON_SECRET is set in environment variables
+    if (process.env.CRON_SECRET) {
+      const authHeader = req.headers.get('authorization') || '';
+      const secretHeader = req.headers.get('x-cron-secret') || '';
+      const secretParam = searchParams.get('secret') || '';
+
+      const isAuthorized =
+        authHeader === `Bearer ${process.env.CRON_SECRET}` ||
+        authHeader === process.env.CRON_SECRET ||
+        secretHeader === process.env.CRON_SECRET ||
+        secretParam === process.env.CRON_SECRET;
+
+      if (!isAuthorized) {
+        return NextResponse.json(
+          { success: false, error: 'Unauthorized: invalid cron secret' },
+          { status: 401 }
+        );
+      }
     }
 
     const employees = await getAllEmployees();
     const activeEmployees = employees.filter((e) => e.status === 'ACTIVE' && e.schedule.active);
 
     const istTime = getISTPunchTime(); // "YYYY-MM-DDTHH:mm"
-    const istHour = parseInt(istTime.split('T')[1].split(':')[0], 10);
-    const istMinute = parseInt(istTime.split('T')[1].split(':')[1], 10);
+    const [todayDateStr, currentIstHHMM] = istTime.split('T');
+    const istHour = parseInt(currentIstHHMM.split(':')[0], 10);
     const today = new Date();
-    // In IST day of week (0 = Sunday, 1 = Monday ... 6 = Saturday)
-    const istDayOfWeek = new Intl.DateTimeFormat('en-US', {
-      timeZone: 'Asia/Kolkata',
-      weekday: 'narrow',
-    }).format(today);
-    // Alternatively get numeric day:
+
     const dayOfWeek = new Date(
       today.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' })
-    ).getDay();
+    ).getDay(); // 0 = Sun, 1 = Mon ... 5 = Fri, 6 = Sat
 
     const results: Array<Record<string, unknown>> = [];
 
     for (const emp of activeEmployees) {
-      // Check working days
-      if (!emp.schedule.workingDays.includes(dayOfWeek)) {
+      // 1. Check working days unless force=true
+      if (!force && !emp.schedule.workingDays.includes(dayOfWeek)) {
         results.push({
           employeeId: emp.employeeId,
           name: emp.name,
           skipped: true,
-          reason: `Not a working day (day of week: ${dayOfWeek})`,
+          reason: `Skipped: Not a scheduled working day (day of week: ${dayOfWeek})`,
         });
         continue;
       }
 
-      // Determine punch type if action is auto
+      // 2. Determine punch action
       let punchTypeToRun: 'CHECK_IN' | 'CHECK_OUT' | null = null;
+
       if (action === 'checkin') {
         punchTypeToRun = 'CHECK_IN';
       } else if (action === 'checkout') {
@@ -58,40 +69,58 @@ export async function POST(req: NextRequest) {
         results.push({
           employeeId: emp.employeeId,
           name: emp.name,
+          action: 'REFRESH',
           refreshed: refreshResult.success,
           error: refreshResult.error,
         });
         continue;
       } else {
-        // Auto mode based on current IST hour and random planned punch times
+        // Auto mode based on current IST hour
+        // Morning Window (8:00 AM - 12:00 PM) -> Check In
+        // Evening Window (5:00 PM - 11:00 PM) -> Check Out
         const [inStartH] = (emp.schedule.checkInMin || '08:00').split(':').map(Number);
         const [inEndH] = (emp.schedule.checkInMax || '10:00').split(':').map(Number);
         const [outStartH] = (emp.schedule.checkOutMin || '18:00').split(':').map(Number);
         const [outEndH] = (emp.schedule.checkOutMax || '20:00').split(':').map(Number);
 
-        const todayStr = istTime.split('T')[0];
-        const currentIstHHMM = istTime.split('T')[1]; // "HH:mm"
+        // Generous window bounds for automated cloud crons
+        const morningWindowStart = Math.min(inStartH, 8);
+        const morningWindowEnd = Math.max(inEndH, 12);
+        const eveningWindowStart = Math.min(outStartH, 17);
+        const eveningWindowEnd = Math.max(outEndH, 23);
 
-        const alreadyCheckedIn =
-          emp.todayPunch?.date === todayStr && emp.todayPunch.checkInStatus === 'SUCCESS';
-        const alreadyCheckedOut =
-          emp.todayPunch?.date === todayStr && emp.todayPunch.checkOutStatus === 'SUCCESS';
-
-        const plannedIn = emp.todayPunch?.date === todayStr ? emp.todayPunch.plannedCheckIn : null;
-        const plannedOut = emp.todayPunch?.date === todayStr ? emp.todayPunch.plannedCheckOut : null;
-
-        // Check-In window (8:00 - 10:00 AM)
-        if (istHour >= inStartH && istHour < inEndH && !alreadyCheckedIn) {
-          // If a random planned time was calculated, wait until that minute arrives
-          if (!plannedIn || currentIstHHMM >= plannedIn) {
-            punchTypeToRun = 'CHECK_IN';
-          }
+        if (istHour >= morningWindowStart && istHour < morningWindowEnd) {
+          punchTypeToRun = 'CHECK_IN';
+        } else if (istHour >= eveningWindowStart && istHour <= eveningWindowEnd) {
+          punchTypeToRun = 'CHECK_OUT';
         }
-        // Check-Out window (6:00 - 8:00 PM)
-        else if (istHour >= outStartH && istHour < outEndH && !alreadyCheckedOut) {
-          if (!plannedOut || currentIstHHMM >= plannedOut) {
-            punchTypeToRun = 'CHECK_OUT';
-          }
+      }
+
+      // Check if already completed today unless force=true
+      if (!force && punchTypeToRun) {
+        const alreadyCheckedIn =
+          emp.todayPunch?.date === todayDateStr && emp.todayPunch.checkInStatus === 'SUCCESS';
+        const alreadyCheckedOut =
+          emp.todayPunch?.date === todayDateStr && emp.todayPunch.checkOutStatus === 'SUCCESS';
+
+        if (punchTypeToRun === 'CHECK_IN' && alreadyCheckedIn) {
+          results.push({
+            employeeId: emp.employeeId,
+            name: emp.name,
+            skipped: true,
+            reason: `Already checked in today at ${emp.todayPunch?.checkedInAt}`,
+          });
+          continue;
+        }
+
+        if (punchTypeToRun === 'CHECK_OUT' && alreadyCheckedOut) {
+          results.push({
+            employeeId: emp.employeeId,
+            name: emp.name,
+            skipped: true,
+            reason: `Already checked out today at ${emp.todayPunch?.checkedOutAt}`,
+          });
+          continue;
         }
       }
 
@@ -103,6 +132,7 @@ export async function POST(req: NextRequest) {
           punchType: punchTypeToRun,
           success: punchResult.success,
           httpStatus: punchResult.httpStatus,
+          punchTime: punchResult.punchTime,
           error: punchResult.error,
         });
       } else {
@@ -110,7 +140,7 @@ export async function POST(req: NextRequest) {
           employeeId: emp.employeeId,
           name: emp.name,
           skipped: true,
-          reason: `Outside scheduled windows or already completed for today (${istHour}:${istMinute})`,
+          reason: `Outside scheduled windows (Current IST: ${currentIstHHMM})`,
         });
       }
     }
@@ -119,10 +149,21 @@ export async function POST(req: NextRequest) {
       success: true,
       time: istTime,
       totalActive: activeEmployees.length,
+      processed: results.length,
       results,
     });
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : 'Cron trigger error';
+    const msg = err instanceof Error ? err.message : 'Cron trigger failure';
+    console.error('[Cron API Error]:', err);
     return NextResponse.json({ success: false, error: msg }, { status: 500 });
   }
+}
+
+// Support both GET (for Vercel Crons & webhooks) and POST (for scripts & curls)
+export async function GET(req: NextRequest) {
+  return handleCronTrigger(req);
+}
+
+export async function POST(req: NextRequest) {
+  return handleCronTrigger(req);
 }
