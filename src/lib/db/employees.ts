@@ -1,5 +1,5 @@
 import { getDatabase } from '@/lib/mongodb';
-import { EmployeeProfile } from '@/lib/types/employee';
+import { EmployeeProfile, TodayPunchState } from '@/lib/types/employee';
 import { ObjectId } from 'mongodb';
 
 export const EMPLOYEES_COLLECTION = 'employees';
@@ -131,19 +131,37 @@ export async function updateEmployeePunchState(
   const now = new Date().toISOString();
   const todayStr = punchTimeIso.split('T')[0];
 
+  const existingDoc = await collection.findOne({ employeeId });
+  const existingToday =
+    existingDoc?.todayPunch && existingDoc.todayPunch.date === todayStr
+      ? existingDoc.todayPunch
+      : {};
+
+  const todayPunch: TodayPunchState = {
+    date: todayStr,
+    plannedCheckIn: existingToday.plannedCheckIn,
+    plannedCheckOut: existingToday.plannedCheckOut,
+    checkedInAt: punchType === 'CHECK_IN' ? now : existingToday.checkedInAt,
+    checkedOutAt: punchType === 'CHECK_OUT' ? now : existingToday.checkedOutAt,
+    checkInStatus:
+      punchType === 'CHECK_IN'
+        ? (success ? 'SUCCESS' : 'FAILED')
+        : (existingToday.checkInStatus || 'PENDING'),
+    checkOutStatus:
+      punchType === 'CHECK_OUT'
+        ? (success ? 'SUCCESS' : 'FAILED')
+        : (existingToday.checkOutStatus || 'PENDING'),
+  };
+
   const updateFields: Record<string, unknown> = {
     updatedAt: now,
-    [`todayPunch.date`]: todayStr,
+    todayPunch,
   };
 
   if (punchType === 'CHECK_IN') {
     updateFields.lastCheckIn = now;
-    updateFields['todayPunch.checkedInAt'] = now;
-    updateFields['todayPunch.checkInStatus'] = success ? 'SUCCESS' : 'FAILED';
   } else {
     updateFields.lastCheckOut = now;
-    updateFields['todayPunch.checkedOutAt'] = now;
-    updateFields['todayPunch.checkOutStatus'] = success ? 'SUCCESS' : 'FAILED';
   }
 
   await collection.updateOne({ employeeId }, { $set: updateFields });
