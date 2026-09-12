@@ -77,7 +77,7 @@ export async function POST(req: NextRequest) {
         checkInMax: '10:00',
         checkOutMin: '18:00',
         checkOutMax: '20:00',
-        workingDays: [1, 2, 3, 4, 5],
+        workingDays: [1, 2, 3, 4, 5, 6],
       },
       status: 'ACTIVE',
       createdAt: new Date().toISOString(),

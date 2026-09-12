@@ -232,7 +232,7 @@ export default function AttendanceDashboard() {
             checkInMax: manualForm.checkInMax,
             checkOutMin: manualForm.checkOutMin,
             checkOutMax: manualForm.checkOutMax,
-            workingDays: [1, 2, 3, 4, 5],
+            workingDays: [1, 2, 3, 4, 5, 6],
           },
         };
       }
