@@ -7,6 +7,7 @@ import { executePunch, getISTPunchTime } from '../lib/hrone/punch';
 import { refreshHROneToken } from '../lib/hrone/token';
 import { getDatabase } from '../lib/mongodb';
 import { EmployeeProfile } from '../lib/types/employee';
+import { sendWhatsAppNotification } from '../whatsapp/bot';
 
 /**
  * Generate a random integer between min and max inclusive
@@ -138,6 +139,9 @@ async function runSchedulerTick() {
       console.log(
         `[Worker] Check-In outcome for ${emp.name}: ${res.success ? 'SUCCESS' : 'FAILED'} (HTTP ${res.httpStatus})`
       );
+      if (res.success) {
+        await sendWhatsAppNotification(`✅ *HROne Check-In Confirmed*\n👤 ${emp.name}\n⏰ ${currentIstTime} IST\n📍 ${emp.geoLocation || 'Office'}`);
+      }
     }
 
     // 5. Evaluate Check-Out Trigger
@@ -153,6 +157,9 @@ async function runSchedulerTick() {
       console.log(
         `[Worker] Check-Out outcome for ${emp.name}: ${res.success ? 'SUCCESS' : 'FAILED'} (HTTP ${res.httpStatus})`
       );
+      if (res.success) {
+        await sendWhatsAppNotification(`🔴 *HROne Check-Out Confirmed*\n👤 ${emp.name}\n⏰ ${currentIstTime} IST\n📍 ${emp.geoLocation || 'Office'}`);
+      }
     }
   }
 }
