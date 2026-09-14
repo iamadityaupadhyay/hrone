@@ -529,7 +529,15 @@ async function handleCommand(from: string, commandText: string, senderName: stri
   }
 
   // 7. PAUSE AUTO-ATTENDANCE (Strictly for this sender only)
-  if (cmd === 'pause' || cmd === 'stop' || cmd === 'off' || cmd === 'leave' || cmd === 'pause today') {
+  if (
+    cmd === 'pause' ||
+    cmd === 'stop' ||
+    cmd === 'off' ||
+    cmd === 'leave' ||
+    cmd === 'disable' ||
+    cmd === 'pause today' ||
+    cmd === 'pause attendance'
+  ) {
     const db = await getDatabase();
     await db.collection('employees').updateOne(
       { employeeId: matchedEmp.employeeId },
@@ -554,7 +562,15 @@ async function handleCommand(from: string, commandText: string, senderName: stri
   }
 
   // 8. RESUME AUTO-ATTENDANCE (Strictly for this sender only)
-  if (cmd === 'resume' || cmd === 'start' || cmd === 'on' || cmd === 'active') {
+  if (
+    cmd === 'resume' ||
+    cmd === 'start' ||
+    cmd === 'on' ||
+    cmd === 'active' ||
+    cmd === 'enable' ||
+    cmd === 'unpause' ||
+    cmd === 'resume attendance'
+  ) {
     const db = await getDatabase();
     await db.collection('employees').updateOne(
       { employeeId: matchedEmp.employeeId },
