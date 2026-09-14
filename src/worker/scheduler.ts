@@ -141,11 +141,15 @@ async function runSchedulerTick() {
         `[Worker] Check-In outcome for ${emp.name}: ${res.success ? 'SUCCESS' : 'FAILED'} (HTTP ${res.httpStatus})`
       );
       if (res.success) {
-        const recipient = emp.mobileNumber ? `${emp.mobileNumber}@s.whatsapp.net` : undefined;
-        await sendWhatsAppNotification(
-          `✅ *Good morning ${emp.name}!*\n\nYour HROne Check-In has been marked successfully at *${currentIstTime} IST*.\n📍 Location: ${emp.geoLocation || 'Office'}`,
-          recipient
-        );
+        const recipient =
+          (emp as any).whatsappLid ||
+          (emp.mobileNumber ? `${emp.mobileNumber}@s.whatsapp.net` : undefined);
+        if (recipient) {
+          await sendWhatsAppNotification(
+            `✅ *Good morning ${emp.name}!*\n\nYour HROne Check-In has been marked successfully at *${currentIstTime} IST*.\n📍 Location: ${emp.geoLocation || 'Office'}`,
+            recipient
+          );
+        }
       }
     }
 
@@ -163,11 +167,15 @@ async function runSchedulerTick() {
         `[Worker] Check-Out outcome for ${emp.name}: ${res.success ? 'SUCCESS' : 'FAILED'} (HTTP ${res.httpStatus})`
       );
       if (res.success) {
-        const recipient = emp.mobileNumber ? `${emp.mobileNumber}@s.whatsapp.net` : undefined;
-        await sendWhatsAppNotification(
-          `🔴 *Good evening ${emp.name}!*\n\nYour HROne Check-Out has been marked successfully at *${currentIstTime} IST*.\n📍 Location: ${emp.geoLocation || 'Office'}`,
-          recipient
-        );
+        const recipient =
+          (emp as any).whatsappLid ||
+          (emp.mobileNumber ? `${emp.mobileNumber}@s.whatsapp.net` : undefined);
+        if (recipient) {
+          await sendWhatsAppNotification(
+            `🔴 *Good evening ${emp.name}!*\n\nYour HROne Check-Out has been marked successfully at *${currentIstTime} IST*.\n📍 Location: ${emp.geoLocation || 'Office'}`,
+            recipient
+          );
+        }
       }
     }
   }
