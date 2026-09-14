@@ -1,0 +1,23 @@
+name: Render 24/7 Anti-Sleep Keepalive
+
+on:
+  schedule:
+    # Run every 10 minutes to ensure Render free tier never sleeps
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Render Service
+        run: |
+          URL="https://hrone-99rh.onrender.com/"
+          echo "Pinging $URL to keep Render awake..."
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$URL")
+          echo "Render response: HTTP $HTTP_STATUS"
+          if [ "$HTTP_STATUS" -eq 200 ]; then
+            echo "✅ Render is awake and active!"
+          else
+            echo "⚠️ Non-200 response: $HTTP_STATUS"
+          fi

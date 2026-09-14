@@ -29,6 +29,26 @@ worker.on('exit', (code) => {
   console.log(`[Launcher] Worker process exited with code ${code}`);
 });
 
+// 3. Built-in Keep-Alive Pinger (Keeps Render Awake 24/7)
+const publicUrl = process.env.RENDER_EXTERNAL_URL || 'https://hrone-99rh.onrender.com';
+const PING_INTERVAL = 8 * 60 * 1000; // Ping every 8 minutes (Render free tier sleeps at 15 mins)
+
+console.log(`[Keep-Alive] Initializing 24/7 anti-sleep pinger for ${publicUrl}...`);
+setInterval(() => {
+  try {
+    const client = publicUrl.startsWith('https') ? require('https') : require('http');
+    client
+      .get(publicUrl, (res) => {
+        console.log(`[Keep-Alive] Pinged ${publicUrl} -> HTTP ${res.statusCode} (Render active)`);
+      })
+      .on('error', (err) => {
+        console.warn(`[Keep-Alive] Ping notice: ${err.message}`);
+      });
+  } catch (err) {
+    // ignore
+  }
+}, PING_INTERVAL);
+
 const shutdown = () => {
   console.log('[Launcher] Gracefully shutting down services...');
   try {
