@@ -23,6 +23,7 @@ export interface EmployeeProfile {
   employeeId: number; // e.g. 2357
   name: string; // e.g. "Aditya Upadhyay"
   username: string; // e.g. "E1885" or phone
+  mobileNumber?: string; // e.g. "917024345264"
   companyDomainCode: string; // e.g. "uharvest"
   jwtToken: string;
   refreshToken: string;

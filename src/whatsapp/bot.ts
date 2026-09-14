@@ -54,18 +54,36 @@ async function handleCommand(from: string, commandText: string, senderName: stri
   if (!sock) return;
 
   const cmd = commandText.trim().toLowerCase();
-  console.log(`[WhatsApp Bot] Received command from ${senderName}: "${commandText}"`);
+  console.log(`[WhatsApp Bot] Received command from ${senderName} (${from}): "${commandText}"`);
+
+  const allEmployees = await getAllEmployees();
+  const cleanSenderDigits = from.replace(/\D/g, '');
+  const senderLast10 = cleanSenderDigits.slice(-10);
+
+  // Identify employee if their username or mobileNumber matches the sender's phone number
+  const matchedEmp = allEmployees.find((e) => {
+    const userDigits = (e.username || '').replace(/\D/g, '');
+    const mobileDigits = (e.mobileNumber || '').replace(/\D/g, '');
+    return (
+      (userDigits.length >= 10 && userDigits.endsWith(senderLast10)) ||
+      (mobileDigits.length >= 10 && mobileDigits.endsWith(senderLast10))
+    );
+  });
+
+  const displayName = matchedEmp ? matchedEmp.name : senderName;
 
   // 1. HELP / MENU
   if (cmd === 'help' || cmd === 'menu' || cmd === 'hi' || cmd === 'hello') {
-    const helpMsg = `👋 *Hello ${senderName}!*\n🤖 *HROne Attendance Bot*\n\n` +
-      `Here are the available commands:\n\n` +
-      `📌 *status* - View today's attendance & token health\n` +
-      `🟢 *punch in* (or *in*) - Mark Check-In right now\n` +
-      `🔴 *punch out* (or *out*) - Mark Check-Out right now\n` +
-      `🔄 *refresh* - Renew HROne login sessions\n` +
-      `📜 *logs* - View last 5 attendance logs\n` +
-      `👥 *team* - List all enrolled employees\n\n` +
+    const greeting = matchedEmp ? `👋 *Hello ${matchedEmp.name}!*` : `👋 *Hello ${senderName}!*`;
+    const helpMsg = `${greeting}\n🤖 *HROne Personal Attendance Bot*\n\n` +
+      `Here are your commands:\n\n` +
+      `📌 *status* - View your attendance status today\n` +
+      `🟢 *in* (or *punch in*) - Mark your Check-In now\n` +
+      `🔴 *out* (or *punch out*) - Mark your Check-Out now\n` +
+      `🔄 *refresh* - Extend your login session\n` +
+      `📜 *logs* - View recent attendance logs\n` +
+      `👥 *team* - View attendance for all team members\n` +
+      `⚡ *all in* / *all out* - Mark attendance for entire team\n\n` +
       `_Type any command to execute!_`;
 
     await sock.sendMessage(from, { text: helpMsg });
@@ -74,55 +92,63 @@ async function handleCommand(from: string, commandText: string, senderName: stri
 
   // 2. STATUS
   if (cmd === 'status' || cmd === 'today') {
-    const employees = await getAllEmployees();
-    const active = employees.filter((e) => e.status === 'ACTIVE');
     const istTime = getISTPunchTime();
     const todayStr = istTime.split('T')[0];
 
-    if (active.length === 0) {
-      await sock.sendMessage(from, { text: 'ℹ️ No active employees registered in MongoDB.' });
-      return;
-    }
+    // If sender is a recognized employee, show their personal status
+    if (matchedEmp) {
+      const inDone = matchedEmp.todayPunch?.date === todayStr && matchedEmp.todayPunch.checkInStatus === 'SUCCESS';
+      const outDone = matchedEmp.todayPunch?.date === todayStr && matchedEmp.todayPunch.checkOutStatus === 'SUCCESS';
 
-    let statusMsg = `📊 *Today's Attendance Status (${todayStr})*\n\n`;
+      let statusMsg = `📊 *Your Attendance Status (${todayStr})*\n`;
+      statusMsg += `👤 *${matchedEmp.name}* (ID: ${matchedEmp.employeeId})\n\n`;
+      statusMsg += `• Check-In: ${inDone ? `✅ Done at ${matchedEmp.todayPunch?.checkedInAt?.split('T')[1]?.slice(0, 5)} IST` : `⏳ Scheduled (${matchedEmp.todayPunch?.plannedCheckIn || matchedEmp.schedule.checkInMin})`}\n`;
+      statusMsg += `• Check-Out: ${outDone ? `✅ Done at ${matchedEmp.todayPunch?.checkedOutAt?.split('T')[1]?.slice(0, 5)} IST` : `⏳ Scheduled (${matchedEmp.todayPunch?.plannedCheckOut || matchedEmp.schedule.checkOutMin})`}\n`;
 
-    for (const emp of active) {
-      const inDone = emp.todayPunch?.date === todayStr && emp.todayPunch.checkInStatus === 'SUCCESS';
-      const outDone = emp.todayPunch?.date === todayStr && emp.todayPunch.checkOutStatus === 'SUCCESS';
-
-      statusMsg += `👤 *${emp.name}* (ID: ${emp.employeeId})\n`;
-      statusMsg += `• In: ${inDone ? `✅ Done (${emp.todayPunch?.checkedInAt?.split('T')[1]?.slice(0, 5)} IST)` : `⏳ Scheduled (${emp.todayPunch?.plannedCheckIn || emp.schedule.checkInMin + '-' + emp.schedule.checkInMax})`}\n`;
-      statusMsg += `• Out: ${outDone ? `✅ Done (${emp.todayPunch?.checkedOutAt?.split('T')[1]?.slice(0, 5)} IST)` : `⏳ Scheduled (${emp.todayPunch?.plannedCheckOut || emp.schedule.checkOutMin + '-' + emp.schedule.checkOutMax})`}\n`;
-
-      if (emp.refreshTokenExpiry) {
+      if (matchedEmp.refreshTokenExpiry) {
         const daysLeft = Math.ceil(
-          (new Date(emp.refreshTokenExpiry).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+          (new Date(matchedEmp.refreshTokenExpiry).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
         );
         statusMsg += `• Session: ${daysLeft > 0 ? `🟢 ${daysLeft} days left` : '🔴 Expired'}\n`;
       }
-      statusMsg += `\n`;
+      statusMsg += `\n_Send *in* to punch in, or *out* to punch out!_`;
+
+      await sock.sendMessage(from, { text: statusMsg });
+      return;
     }
 
+    // Otherwise show whole team
+    const active = allEmployees.filter((e) => e.status === 'ACTIVE');
+    let statusMsg = `📊 *Team Attendance Status (${todayStr})*\n\n`;
+    for (const emp of active) {
+      const inDone = emp.todayPunch?.date === todayStr && emp.todayPunch.checkInStatus === 'SUCCESS';
+      const outDone = emp.todayPunch?.date === todayStr && emp.todayPunch.checkOutStatus === 'SUCCESS';
+      statusMsg += `👤 *${emp.name}*: In ${inDone ? '✅' : '⏳'} | Out ${outDone ? '✅' : '⏳'}\n`;
+    }
     await sock.sendMessage(from, { text: statusMsg });
     return;
   }
 
   // 3. PUNCH IN
   if (cmd === 'punch in' || cmd === 'in' || cmd === 'check in' || cmd === 'checkin') {
-    const employees = await getAllEmployees();
-    const active = employees.filter((e) => e.status === 'ACTIVE' && e.schedule.active);
+    // If sent by specific employee, punch only for them!
+    const targets = matchedEmp ? [matchedEmp] : allEmployees.filter((e) => e.status === 'ACTIVE' && e.schedule.active);
 
-    if (active.length === 0) {
-      await sock.sendMessage(from, { text: '⚠️ No active employees to punch in.' });
+    if (targets.length === 0) {
+      await sock.sendMessage(from, { text: '⚠️ No active employee found to punch in.' });
       return;
     }
 
-    await sock.sendMessage(from, { text: `⏳ Punching in ${active.length} employee(s)...` });
+    await sock.sendMessage(from, {
+      text: matchedEmp
+        ? `⏳ Marking Check-In for *${matchedEmp.name}*...`
+        : `⏳ Marking Check-In for all ${targets.length} active employee(s)...`,
+    });
 
-    let replyMsg = `🟢 *Check-In Results:*\n\n`;
-    for (const emp of active) {
+    let replyMsg = `🟢 *Check-In Outcome:*\n\n`;
+    for (const emp of targets) {
       const res = await executePunch(emp, 'CHECK_IN', 'MANUAL');
-      replyMsg += `• *${emp.name}*: ${res.success ? '✅ Success (200 OK)' : `❌ Failed (${res.error || 'HTTP error'})`}\n`;
+      replyMsg += `• *${emp.name}*: ${res.success ? '✅ Marked Successfully (200 OK)' : `❌ Failed: ${res.error}`}\n`;
     }
 
     await sock.sendMessage(from, { text: replyMsg });
@@ -131,22 +157,50 @@ async function handleCommand(from: string, commandText: string, senderName: stri
 
   // 4. PUNCH OUT
   if (cmd === 'punch out' || cmd === 'out' || cmd === 'check out' || cmd === 'checkout') {
-    const employees = await getAllEmployees();
-    const active = employees.filter((e) => e.status === 'ACTIVE' && e.schedule.active);
+    const targets = matchedEmp ? [matchedEmp] : allEmployees.filter((e) => e.status === 'ACTIVE' && e.schedule.active);
 
-    if (active.length === 0) {
-      await sock.sendMessage(from, { text: '⚠️ No active employees to punch out.' });
+    if (targets.length === 0) {
+      await sock.sendMessage(from, { text: '⚠️ No active employee found to punch out.' });
       return;
     }
 
-    await sock.sendMessage(from, { text: `⏳ Punching out ${active.length} employee(s)...` });
+    await sock.sendMessage(from, {
+      text: matchedEmp
+        ? `⏳ Marking Check-Out for *${matchedEmp.name}*...`
+        : `⏳ Marking Check-Out for all ${targets.length} active employee(s)...`,
+    });
 
-    let replyMsg = `🔴 *Check-Out Results:*\n\n`;
-    for (const emp of active) {
+    let replyMsg = `🔴 *Check-Out Outcome:*\n\n`;
+    for (const emp of targets) {
       const res = await executePunch(emp, 'CHECK_OUT', 'MANUAL');
-      replyMsg += `• *${emp.name}*: ${res.success ? '✅ Success (200 OK)' : `❌ Failed (${res.error || 'HTTP error'})`}\n`;
+      replyMsg += `• *${emp.name}*: ${res.success ? '✅ Marked Successfully (200 OK)' : `❌ Failed: ${res.error}`}\n`;
     }
 
+    await sock.sendMessage(from, { text: replyMsg });
+    return;
+  }
+
+  // 4b. ALL IN / ALL OUT (Admin commands)
+  if (cmd === 'all in' || cmd === 'all punch in') {
+    const targets = allEmployees.filter((e) => e.status === 'ACTIVE' && e.schedule.active);
+    await sock.sendMessage(from, { text: `⏳ Punching in all ${targets.length} employees...` });
+    let replyMsg = `🟢 *Team Check-In Results:*\n\n`;
+    for (const emp of targets) {
+      const res = await executePunch(emp, 'CHECK_IN', 'MANUAL');
+      replyMsg += `• *${emp.name}*: ${res.success ? '✅ Success' : `❌ ${res.error}`}\n`;
+    }
+    await sock.sendMessage(from, { text: replyMsg });
+    return;
+  }
+
+  if (cmd === 'all out' || cmd === 'all punch out') {
+    const targets = allEmployees.filter((e) => e.status === 'ACTIVE' && e.schedule.active);
+    await sock.sendMessage(from, { text: `⏳ Punching out all ${targets.length} employees...` });
+    let replyMsg = `🔴 *Team Check-Out Results:*\n\n`;
+    for (const emp of targets) {
+      const res = await executePunch(emp, 'CHECK_OUT', 'MANUAL');
+      replyMsg += `• *${emp.name}*: ${res.success ? '✅ Success' : `❌ ${res.error}`}\n`;
+    }
     await sock.sendMessage(from, { text: replyMsg });
     return;
   }

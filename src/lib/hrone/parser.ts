@@ -2,6 +2,7 @@ export interface ParsedHROneCredentials {
   employeeId?: number;
   name?: string;
   username?: string;
+  mobileNumber?: string;
   companyDomainCode?: string;
   jwtToken?: string;
   refreshToken?: string;
@@ -112,6 +113,17 @@ export function parseCurlOrInput(input: string): ParsedHROneCredentials {
         if (!isNaN(minutes)) {
           result.refreshTokenExpiry = new Date(Date.now() + minutes * 60 * 1000).toISOString();
         }
+      }
+
+      // Extract mobile number from claims (unique_name / UserLogOnId / MobileNo)
+      const candidateNumber = String(
+        claims.MobileNo || claims.unique_name || claims.UserLogOnId || result.username || ''
+      );
+      const digits = candidateNumber.replace(/\D/g, '');
+      if (digits.length === 10) {
+        result.mobileNumber = `91${digits}`;
+      } else if (digits.length === 12 && digits.startsWith('91')) {
+        result.mobileNumber = digits;
       }
     }
   }
