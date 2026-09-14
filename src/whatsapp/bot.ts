@@ -43,9 +43,12 @@ export async function sendWhatsAppNotification(message: string, recipientJid?: s
       return false;
     }
 
-    const jid = targetNumber.includes('@s.whatsapp.net')
-      ? targetNumber
-      : `${targetNumber.replace(/\D/g, '')}@s.whatsapp.net`;
+    let jid = targetNumber;
+    if (!jid.includes('@')) {
+      const clean = jid.replace(/\D/g, '');
+      const finalDigits = clean.length === 10 ? '91' + clean : clean;
+      jid = `${finalDigits}@s.whatsapp.net`;
+    }
 
     await sock.sendMessage(jid, { text: message });
     console.log(`[WhatsApp Bot] Sent notification to ${jid}`);

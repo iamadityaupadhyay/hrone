@@ -140,13 +140,29 @@ async function runSchedulerTick() {
       console.log(
         `[Worker] Check-In outcome for ${emp.name}: ${res.success ? 'SUCCESS' : 'FAILED'} (HTTP ${res.httpStatus})`
       );
-      if (res.success) {
-        const recipient =
-          (emp as any).whatsappLid ||
-          (emp.mobileNumber ? `${emp.mobileNumber}@s.whatsapp.net` : undefined);
-        if (recipient) {
+      const refCode = (res.responsePayload as any)?.messageCode;
+      const recipient =
+        (emp as any).whatsappLid ||
+        (emp as any).whatsappJid ||
+        (emp.mobileNumber ? `${emp.mobileNumber}@s.whatsapp.net` : undefined) ||
+        (emp.username && /^\d{10}$/.test(emp.username) ? `91${emp.username}@s.whatsapp.net` : undefined);
+
+      if (recipient) {
+        if (res.success) {
           await sendWhatsAppNotification(
-            `✅ *Good morning ${emp.name}!*\n\nYour HROne Check-In has been marked successfully at *${currentIstTime} IST*.\n📍 Location: ${emp.geoLocation || 'Office'}`,
+            `✅ *Good morning ${emp.name}!*\n\n` +
+            `Your HROne Check-In has been marked automatically.\n` +
+            `⏰ Time: *${currentIstTime} IST*\n` +
+            `📍 Location: ${emp.geoLocation || 'Office'}\n` +
+            `⚡ HROne Ref: ${refCode || 'Success (200 OK)'}`,
+            recipient
+          );
+        } else {
+          await sendWhatsAppNotification(
+            `⚠️ *Attendance Alert for ${emp.name}*\n\n` +
+            `Automated Check-In attempt at *${currentIstTime} IST* failed.\n` +
+            `Reason: ${res.error || 'Server error'}\n\n` +
+            `Reply *in* to retry punching manually, or *status* to view your card.`,
             recipient
           );
         }
@@ -166,13 +182,30 @@ async function runSchedulerTick() {
       console.log(
         `[Worker] Check-Out outcome for ${emp.name}: ${res.success ? 'SUCCESS' : 'FAILED'} (HTTP ${res.httpStatus})`
       );
-      if (res.success) {
-        const recipient =
-          (emp as any).whatsappLid ||
-          (emp.mobileNumber ? `${emp.mobileNumber}@s.whatsapp.net` : undefined);
-        if (recipient) {
+
+      const refCode = (res.responsePayload as any)?.messageCode;
+      const recipient =
+        (emp as any).whatsappLid ||
+        (emp as any).whatsappJid ||
+        (emp.mobileNumber ? `${emp.mobileNumber}@s.whatsapp.net` : undefined) ||
+        (emp.username && /^\d{10}$/.test(emp.username) ? `91${emp.username}@s.whatsapp.net` : undefined);
+
+      if (recipient) {
+        if (res.success) {
           await sendWhatsAppNotification(
-            `🔴 *Good evening ${emp.name}!*\n\nYour HROne Check-Out has been marked successfully at *${currentIstTime} IST*.\n📍 Location: ${emp.geoLocation || 'Office'}`,
+            `🔴 *Good evening ${emp.name}!*\n\n` +
+            `Your HROne Check-Out has been marked automatically.\n` +
+            `⏰ Time: *${currentIstTime} IST*\n` +
+            `📍 Location: ${emp.geoLocation || 'Office'}\n` +
+            `⚡ HROne Ref: ${refCode || 'Success (200 OK)'}`,
+            recipient
+          );
+        } else {
+          await sendWhatsAppNotification(
+            `⚠️ *Attendance Alert for ${emp.name}*\n\n` +
+            `Automated Check-Out attempt at *${currentIstTime} IST* failed.\n` +
+            `Reason: ${res.error || 'Server error'}\n\n` +
+            `Reply *out* to retry punching manually, or *status* to view your card.`,
             recipient
           );
         }
