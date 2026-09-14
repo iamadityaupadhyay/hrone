@@ -366,6 +366,44 @@ async function handleCommand(from: string, commandText: string, senderName: stri
   });
 }
 
+async function syncAuthFromMongoDB() {
+  try {
+    const db = await getDatabase();
+    const docs = await db.collection('whatsapp_auth_store').find({}).toArray();
+    if (docs.length > 0) {
+      if (!fs.existsSync(AUTH_DIR)) fs.mkdirSync(AUTH_DIR, { recursive: true });
+      for (const doc of docs) {
+        const filePath = path.join(AUTH_DIR, String(doc._id));
+        fs.writeFileSync(filePath, Buffer.from(doc.content, 'base64'));
+      }
+      console.log(`[WhatsApp Bot] Restored ${docs.length} auth credential files from MongoDB.`);
+    }
+  } catch (err) {
+    console.warn('[WhatsApp Bot] Could not restore auth from MongoDB:', err);
+  }
+}
+
+async function syncAuthToMongoDB() {
+  try {
+    if (!fs.existsSync(AUTH_DIR)) return;
+    const files = fs.readdirSync(AUTH_DIR);
+    const db = await getDatabase();
+    for (const file of files) {
+      const fullPath = path.join(AUTH_DIR, file);
+      if (fs.statSync(fullPath).isFile()) {
+        const content = fs.readFileSync(fullPath).toString('base64');
+        await db.collection('whatsapp_auth_store').updateOne(
+          { _id: file as unknown as import('mongodb').ObjectId },
+          { $set: { content, updatedAt: new Date() } },
+          { upsert: true }
+        );
+      }
+    }
+  } catch (err) {
+    console.warn('[WhatsApp Bot] Could not backup auth to MongoDB:', err);
+  }
+}
+
 /**
  * Start the WhatsApp Bot Socket
  */
@@ -373,6 +411,9 @@ export async function startWhatsAppBot() {
   if (!fs.existsSync(AUTH_DIR)) {
     fs.mkdirSync(AUTH_DIR, { recursive: true });
   }
+
+  // Restore any previous session from MongoDB first
+  await syncAuthFromMongoDB();
 
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
   const { version } = await fetchLatestBaileysVersion();
@@ -386,7 +427,10 @@ export async function startWhatsAppBot() {
     syncFullHistory: false,
   });
 
-  sock.ev.on('creds.update', saveCreds);
+  sock.ev.on('creds.update', async () => {
+    await saveCreds();
+    await syncAuthToMongoDB();
+  });
 
   sock.ev.on('connection.update', async (update) => {
     const { connection, lastDisconnect, qr } = update;
@@ -446,7 +490,14 @@ export async function startWhatsAppBot() {
       if (shouldReconnect) {
         setTimeout(startWhatsAppBot, 3000);
       } else {
-        console.log('[WhatsApp Bot] Logged out. Delete .whatsapp_auth and restart to scan again.');
+        console.log('[WhatsApp Bot] Logged out. Clearing auth store...');
+        try {
+          const db = await getDatabase();
+          await db.collection('whatsapp_auth_store').deleteMany({});
+          if (fs.existsSync(AUTH_DIR)) fs.rmSync(AUTH_DIR, { recursive: true, force: true });
+        } catch {
+          // ignore
+        }
       }
     } else if (connection === 'open') {
       console.log('\n✅ [WhatsApp Bot] Connected successfully to WhatsApp!');

@@ -7,7 +7,7 @@ import { executePunch, getISTPunchTime } from '../lib/hrone/punch';
 import { refreshHROneToken } from '../lib/hrone/token';
 import { getDatabase } from '../lib/mongodb';
 import { EmployeeProfile } from '../lib/types/employee';
-import { sendWhatsAppNotification } from '../whatsapp/bot';
+import { sendWhatsAppNotification, startWhatsAppBot } from '../whatsapp/bot';
 
 /**
  * Generate a random integer between min and max inclusive
@@ -140,7 +140,11 @@ async function runSchedulerTick() {
         `[Worker] Check-In outcome for ${emp.name}: ${res.success ? 'SUCCESS' : 'FAILED'} (HTTP ${res.httpStatus})`
       );
       if (res.success) {
-        await sendWhatsAppNotification(`✅ *HROne Check-In Confirmed*\n👤 ${emp.name}\n⏰ ${currentIstTime} IST\n📍 ${emp.geoLocation || 'Office'}`);
+        const recipient = emp.mobileNumber ? `${emp.mobileNumber}@s.whatsapp.net` : undefined;
+        await sendWhatsAppNotification(
+          `✅ *Good morning ${emp.name}!*\n\nYour HROne Check-In has been marked successfully at *${currentIstTime} IST*.\n📍 Location: ${emp.geoLocation || 'Office'}`,
+          recipient
+        );
       }
     }
 
@@ -158,7 +162,11 @@ async function runSchedulerTick() {
         `[Worker] Check-Out outcome for ${emp.name}: ${res.success ? 'SUCCESS' : 'FAILED'} (HTTP ${res.httpStatus})`
       );
       if (res.success) {
-        await sendWhatsAppNotification(`🔴 *HROne Check-Out Confirmed*\n👤 ${emp.name}\n⏰ ${currentIstTime} IST\n📍 ${emp.geoLocation || 'Office'}`);
+        const recipient = emp.mobileNumber ? `${emp.mobileNumber}@s.whatsapp.net` : undefined;
+        await sendWhatsAppNotification(
+          `🔴 *Good evening ${emp.name}!*\n\nYour HROne Check-Out has been marked successfully at *${currentIstTime} IST*.\n📍 Location: ${emp.geoLocation || 'Office'}`,
+          recipient
+        );
       }
     }
   }
@@ -169,6 +177,14 @@ async function startWorker() {
   console.log('      HROne Autonomous Attendance Worker Started    ');
   console.log('====================================================');
   console.log('Worker is active. Checking schedule every 60 seconds...\n');
+
+  // Launch WhatsApp Bot in background
+  try {
+    console.log('[Worker] Launching WhatsApp Bot socket...');
+    await startWhatsAppBot();
+  } catch (err) {
+    console.error('[Worker] Error launching WhatsApp Bot:', err);
+  }
 
   // Run initial tick immediately
   await runSchedulerTick();
