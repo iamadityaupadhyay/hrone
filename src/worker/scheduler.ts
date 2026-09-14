@@ -2,6 +2,7 @@ import * as dotenv from 'dotenv';
 dotenv.config({ path: '.env.local' });
 dotenv.config({ path: '.env' });
 
+import * as http from 'http';
 import { getAllEmployees } from '../lib/db/employees';
 import { executePunch, getISTPunchTime } from '../lib/hrone/punch';
 import { refreshHROneToken } from '../lib/hrone/token';
@@ -177,6 +178,29 @@ async function startWorker() {
   console.log('      HROne Autonomous Attendance Worker Started    ');
   console.log('====================================================');
   console.log('Worker is active. Checking schedule every 60 seconds...\n');
+
+  // Launch HTTP health server for cloud port checkers (Render, Railway, Fly)
+  if (!process.env.NO_HTTP) {
+    const port = Number(process.env.PORT) || 10000;
+    try {
+      const server = http.createServer((req, res) => {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            status: 'ok',
+            service: 'HROne Autonomous Attendance Worker & WhatsApp Bot',
+            timestamp: new Date().toISOString(),
+          })
+        );
+      });
+
+      server.listen(port, '0.0.0.0', () => {
+        console.log(`[Worker] Health server actively listening on 0.0.0.0:${port}`);
+      });
+    } catch (err) {
+      console.warn('[Worker] Could not bind health server port:', err);
+    }
+  }
 
   // Launch WhatsApp Bot in background
   try {

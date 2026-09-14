@@ -21,7 +21,7 @@ web.on('exit', (code) => {
 console.log('[Launcher] Starting Autonomous Scheduler & WhatsApp Bot...');
 const worker = spawn('npm', ['run', 'worker'], {
   stdio: 'inherit',
-  env: { ...process.env },
+  env: { ...process.env, NO_HTTP: '1' },
   shell: true,
 });
 
