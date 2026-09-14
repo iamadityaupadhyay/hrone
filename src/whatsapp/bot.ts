@@ -98,13 +98,28 @@ async function handleCommand(from: string, commandText: string, senderName: stri
   const cleanSenderDigits = from.replace(/\D/g, '');
   const senderLast10 = cleanSenderDigits.length >= 10 ? cleanSenderDigits.slice(-10) : '';
 
-  // 0. CANCEL ONGOING FLOW
-  if (cmd === 'cancel' || cmd === 'abort' || cmd === 'stop') {
-    if (pendingLogins.has(from)) {
-      pendingLogins.delete(from);
-      await sock.sendMessage(from, { text: '🚫 Login process cancelled.' });
-      return;
+  // 0. CANCEL / ABORT / RESET / LOGOUT
+  if (cmd === 'cancel' || cmd === 'abort' || cmd === 'reset' || cmd === 'logout') {
+    pendingLogins.delete(from);
+
+    // If logging out / unlinking active WhatsApp session
+    if (cmd === 'logout' || cmd === 'reset') {
+      try {
+        const db = await getDatabase();
+        await db.collection('employees').updateOne(
+          { $or: [{ whatsappLid: from }, { whatsappJid: from }] },
+          { $unset: { whatsappLid: '', whatsappJid: '', whatsappName: '' }, $set: { updatedAt: new Date().toISOString() } }
+        );
+      } catch {
+        // ignore
+      }
     }
+
+    pendingLogins.set(from, { step: 'AWAITING_USERNAME', timestamp: Date.now() });
+    await sock.sendMessage(from, {
+      text: `🚫 *Session aborted.*\n\nEnter your *HROne Username or Employee Code* to start fresh:`,
+    });
+    return;
   }
 
   // 0b. CONVERSATIONAL STEP-BY-STEP LOGIN STATE MACHINE
