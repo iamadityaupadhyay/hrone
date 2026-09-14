@@ -7,6 +7,7 @@ import makeWASocket, {
 } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
 import qrcode from 'qrcode-terminal';
+import QRCode from 'qrcode';
 import pino from 'pino';
 import path from 'path';
 import fs from 'fs';
@@ -285,7 +286,7 @@ export async function startWhatsAppBot() {
 
   sock.ev.on('creds.update', saveCreds);
 
-  sock.ev.on('connection.update', (update) => {
+  sock.ev.on('connection.update', async (update) => {
     const { connection, lastDisconnect, qr } = update;
 
     if (qr) {
@@ -295,6 +296,24 @@ export async function startWhatsAppBot() {
       console.log('======================================================\n');
       qrcode.generate(qr, { small: true });
       console.log('\n======================================================\n');
+
+      try {
+        const qrDataUrl = await QRCode.toDataURL(qr, { margin: 2, scale: 6 });
+        const db = await getDatabase();
+        await db.collection('whatsapp_session').updateOne(
+          { _id: 'current_session' as unknown as import('mongodb').ObjectId },
+          {
+            $set: {
+              status: 'PAIRING',
+              qrDataUrl,
+              updatedAt: new Date().toISOString(),
+            },
+          },
+          { upsert: true }
+        );
+      } catch (err) {
+        console.error('[WhatsApp Bot] Failed to save QR to MongoDB:', err);
+      }
     }
 
     if (connection === 'close') {
@@ -305,6 +324,23 @@ export async function startWhatsAppBot() {
         `[WhatsApp Bot] Connection closed. Reason: ${(lastDisconnect?.error as Boom)?.message || 'Unknown'}. Reconnecting: ${shouldReconnect}`
       );
 
+      try {
+        const db = await getDatabase();
+        await db.collection('whatsapp_session').updateOne(
+          { _id: 'current_session' as unknown as import('mongodb').ObjectId },
+          {
+            $set: {
+              status: 'DISCONNECTED',
+              qrDataUrl: null,
+              updatedAt: new Date().toISOString(),
+            },
+          },
+          { upsert: true }
+        );
+      } catch (err) {
+        // ignore
+      }
+
       if (shouldReconnect) {
         setTimeout(startWhatsAppBot, 3000);
       } else {
@@ -313,6 +349,26 @@ export async function startWhatsAppBot() {
     } else if (connection === 'open') {
       console.log('\n✅ [WhatsApp Bot] Connected successfully to WhatsApp!');
       console.log('🤖 Send "help" to this number from any chat to interact.\n');
+
+      try {
+        const db = await getDatabase();
+        const userJid = sock?.user?.id || '';
+        const phoneNumber = userJid.split(':')[0] || userJid.split('@')[0];
+        await db.collection('whatsapp_session').updateOne(
+          { _id: 'current_session' as unknown as import('mongodb').ObjectId },
+          {
+            $set: {
+              status: 'CONNECTED',
+              phoneNumber: phoneNumber ? `+${phoneNumber}` : 'Connected',
+              qrDataUrl: null,
+              updatedAt: new Date().toISOString(),
+            },
+          },
+          { upsert: true }
+        );
+      } catch (err) {
+        console.error('[WhatsApp Bot] Failed to save connected state to DB:', err);
+      }
     }
   });
 
