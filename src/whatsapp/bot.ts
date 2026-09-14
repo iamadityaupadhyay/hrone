@@ -391,30 +391,27 @@ async function handleCommand(from: string, commandText: string, senderName: stri
   }
 
   // 3. HELP / MENU
-  if (cmd === 'help' || cmd === 'menu' || cmd === 'hi' || cmd === 'hello') {
-    if (matchedEmp) {
-      const helpMsg =
-        `👋 *Hello ${matchedEmp.name}!* (ID: ${matchedEmp.employeeId})\n\n` +
-        `🤖 *Your Personal Attendance Bot*\n\n` +
-        `📌 *status* - View your attendance status today\n` +
-        `🟢 *in* - Mark your Check-In now\n` +
-        `🔴 *out* - Mark your Check-Out now\n` +
-        `⏸️ *pause* - Turn OFF auto-attendance for today/leave\n` +
-        `▶️ *resume* - Turn ON auto-attendance\n` +
-        `🔄 *refresh* - Extend your login session\n` +
-        `📜 *logs* - View your recent punch activity\n\n` +
-        `_All data is private and strictly for your profile._`;
-      await sock.sendMessage(from, { text: helpMsg });
-    } else {
-      pendingLogins.set(from, { step: 'AWAITING_USERNAME', timestamp: Date.now() });
-      const unlinkedMsg =
-        `👋 *Hello ${senderName}!* (HROne Personal Bot)\n\n` +
-        `🔒 *You are not logged in yet.*\n\n` +
-        `Please reply with your *HROne Username or Employee Code* to log in:\n` +
-        `👉 (Example: *E1885* or *9871251984*)\n\n` +
-        `_Or if you are already enrolled, reply: link <Your Employee ID>_`;
-      await sock.sendMessage(from, { text: unlinkedMsg });
-    }
+  if (cmd === 'help' || cmd === 'menu' || cmd === 'commands' || cmd === 'cmd' || cmd === 'hi' || cmd === 'hello') {
+    const userLine = matchedEmp
+      ? `👤 Connected as: *${matchedEmp.name}* (ID: ${matchedEmp.employeeId})\n• Auto-Pilot: ${matchedEmp.schedule.active && matchedEmp.status === 'ACTIVE' ? '🟢 Active' : '⏸️ Paused'}`
+      : `🔒 Status: *Not logged in* (Reply with your HROne username to log in)`;
+
+    const helpMsg =
+      `📋 *HROne WhatsApp Commands*\n\n` +
+      `${userLine}\n\n` +
+      `• *status* - View your attendance card, scheduled times & session health\n` +
+      `• *in* (or *checkin*) - Mark Check-In immediately on HROne Cloud\n` +
+      `• *out* (or *checkout*) - Mark Check-Out immediately on HROne Cloud\n` +
+      `• *pause* (or *stop*, *leave*) - Turn OFF auto-attendance for today/leave\n` +
+      `• *resume* (or *start*, *unpause*) - Turn ON auto-attendance\n` +
+      `• *logs* - View recent punches with official HROne reference codes\n` +
+      `• *refresh* - Extend your 7-day cloud session\n` +
+      `• *login* - Enter your HROne credentials (or switch account)\n` +
+      `• *logout* (or *reset*) - Unlink this WhatsApp session\n` +
+      `• *cancel* (or *abort*) - Abort ongoing action and start fresh\n` +
+      `• *help* - Show this command list`;
+
+    await sock.sendMessage(from, { text: helpMsg });
     return;
   }
 
