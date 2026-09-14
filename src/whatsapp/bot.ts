@@ -1,6 +1,8 @@
 import makeWASocket, {
   DisconnectReason,
   useMultiFileAuthState,
+  fetchLatestBaileysVersion,
+  Browsers,
   WASocket,
 } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
@@ -216,11 +218,15 @@ export async function startWhatsAppBot() {
   }
 
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
+  const { version } = await fetchLatestBaileysVersion();
 
   sock = makeWASocket({
+    version,
     auth: state,
-    logger: pino({ level: 'silent' }), // silence noisy Baileys logs
+    logger: pino({ level: 'silent' }),
     printQRInTerminal: false,
+    browser: Browsers.macOS('Desktop'),
+    syncFullHistory: false,
   });
 
   sock.ev.on('creds.update', saveCreds);
