@@ -12,3 +12,5 @@ services:
         value: test
       - key: TZ
         value: Asia/Kolkata
+      - key: PORT
+        value: 10000

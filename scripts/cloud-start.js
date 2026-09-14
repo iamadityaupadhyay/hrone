@@ -4,11 +4,11 @@ console.log('====================================================');
 console.log('       Launching HROne Autonomous Cloud Service     ');
 console.log('====================================================');
 
-// 1. Launch Next.js Web Dashboard
-console.log('[Launcher] Starting Next.js Web Dashboard...');
-const web = spawn('npm', ['run', 'start'], {
+const port = process.env.PORT || 10000;
+console.log(`[Launcher] Starting Next.js Web Dashboard on 0.0.0.0:${port}...`);
+const web = spawn(`npx next start -H 0.0.0.0 -p ${port}`, {
   stdio: 'inherit',
-  env: { ...process.env },
+  env: { ...process.env, PORT: String(port) },
   shell: true,
 });
 
