@@ -8,7 +8,7 @@ import { executePunch, getISTPunchTime } from '../lib/hrone/punch';
 import { refreshHROneToken } from '../lib/hrone/token';
 import { getDatabase } from '../lib/mongodb';
 import { EmployeeProfile } from '../lib/types/employee';
-import { sendWhatsAppNotification, startWhatsAppBot } from '../whatsapp/bot';
+import { getWhatsAppBotStatus, sendWhatsAppNotification, startWhatsAppBot } from '../whatsapp/bot';
 
 /**
  * Generate a random integer between min and max inclusive
@@ -234,15 +234,33 @@ async function startWorker() {
   if (!process.env.NO_HTTP) {
     const port = Number(process.env.PORT) || 10000;
     try {
-      const server = http.createServer((req, res) => {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(
-          JSON.stringify({
-            status: 'ok',
-            service: 'HROne Autonomous Attendance Worker & WhatsApp Bot',
-            timestamp: new Date().toISOString(),
-          })
-        );
+      const server = http.createServer(async (req, res) => {
+        try {
+          const istTime = getISTPunchTime();
+          const emps = await getAllEmployees().catch(() => []);
+          const activeCount = emps.filter((e) => e.status === 'ACTIVE' && e.schedule.active).length;
+          const botStatus = getWhatsAppBotStatus();
+
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify(
+              {
+                status: 'healthy',
+                service: 'HROne Autonomous Attendance Worker & WhatsApp Bot',
+                currentTimeIST: istTime,
+                bot: botStatus,
+                totalEmployees: emps.length,
+                activeEmployeesInQueue: activeCount,
+                timestamp: new Date().toISOString(),
+              },
+              null,
+              2
+            )
+          );
+        } catch {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ status: 'ok', timestamp: new Date().toISOString() }));
+        }
       });
 
       server.listen(port, '0.0.0.0', () => {

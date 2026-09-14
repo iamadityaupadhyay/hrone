@@ -27,6 +27,14 @@ interface PendingLoginState {
 }
 const pendingLogins = new Map<string, PendingLoginState>();
 
+export function getWhatsAppBotStatus() {
+  return {
+    connected: sock !== null && !!sock.user,
+    userJid: sock?.user?.id || null,
+    userName: sock?.user?.name || null,
+  };
+}
+
 /**
  * Send a notification message via WhatsApp if bot is connected
  */
