@@ -473,14 +473,20 @@ async function handleCommand(from: string, commandText: string, senderName: stri
   if (cmd === 'punch in' || cmd === 'in' || cmd === 'check in' || cmd === 'checkin') {
     await sock.sendMessage(from, { text: `⏳ Contacting HROne Cloud to mark Check-In for *${matchedEmp.name}*...` });
     const res = await executePunch(matchedEmp, 'CHECK_IN', 'MANUAL');
-    const refCode = (res.responsePayload as any)?.messageCode;
+    const apiResponseStr = typeof res.responsePayload === 'object'
+      ? JSON.stringify(res.responsePayload, null, 2)
+      : String(res.responsePayload || res.error || 'Done');
+
     const replyMsg = res.success
       ? `🟢 *Check-In Successful!*\n\n` +
-      `👤 *${matchedEmp.name}*\n` +
-      `⏰ Time: *${formatISTDisplay(res.punchTime)}*\n` +
-      `📍 Location: ${matchedEmp.geoLocation || 'Office'}\n` +
-      `⚡ HROne Ref: ${refCode || 'Record saved successfully'}`
-      : `❌ *Check-In Failed:*\n\n${res.error}`;
+        `👤 *${matchedEmp.name}*\n` +
+        `⏰ Time: *${formatISTDisplay(res.punchTime)}*\n` +
+        `📍 Location: ${matchedEmp.geoLocation || 'Office'}\n\n` +
+        `*HROne API Response:*\n` +
+        `\`\`\`json\n${apiResponseStr}\n\`\`\``
+      : `❌ *Check-In Failed:*\n\n` +
+        `*HROne API Response:*\n` +
+        `\`\`\`json\n${apiResponseStr}\n\`\`\``;
     await sock.sendMessage(from, { text: replyMsg });
     return;
   }
@@ -489,14 +495,20 @@ async function handleCommand(from: string, commandText: string, senderName: stri
   if (cmd === 'punch out' || cmd === 'out' || cmd === 'check out' || cmd === 'checkout') {
     await sock.sendMessage(from, { text: `⏳ Contacting HROne Cloud to mark Check-Out for *${matchedEmp.name}*...` });
     const res = await executePunch(matchedEmp, 'CHECK_OUT', 'MANUAL');
-    const refCode = (res.responsePayload as any)?.messageCode;
+    const apiResponseStr = typeof res.responsePayload === 'object'
+      ? JSON.stringify(res.responsePayload, null, 2)
+      : String(res.responsePayload || res.error || 'Done');
+
     const replyMsg = res.success
       ? `🔴 *Check-Out Successful!*\n\n` +
-      `👤 *${matchedEmp.name}*\n` +
-      `⏰ Time: *${formatISTDisplay(res.punchTime)}*\n` +
-      `📍 Location: ${matchedEmp.geoLocation || 'Office'}\n` +
-      `⚡ HROne Ref: ${refCode || 'Record saved successfully'}`
-      : `❌ *Check-Out Failed:*\n\n${res.error}`;
+        `👤 *${matchedEmp.name}*\n` +
+        `⏰ Time: *${formatISTDisplay(res.punchTime)}*\n` +
+        `📍 Location: ${matchedEmp.geoLocation || 'Office'}\n\n` +
+        `*HROne API Response:*\n` +
+        `\`\`\`json\n${apiResponseStr}\n\`\`\``
+      : `❌ *Check-Out Failed:*\n\n` +
+        `*HROne API Response:*\n` +
+        `\`\`\`json\n${apiResponseStr}\n\`\`\``;
     await sock.sendMessage(from, { text: replyMsg });
     return;
   }
