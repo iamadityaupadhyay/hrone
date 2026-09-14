@@ -209,27 +209,19 @@ async function handleCommand(from: string, commandText: string, senderName: stri
     return;
   }
 
-  // 1. MATCH EMPLOYEE STRICTLY FOR THIS SENDER
+  // 1. MATCH EMPLOYEE STRICTLY BY VERIFIED PHONE OR EXPLICIT LOGIN
   let matchedEmp = allEmployees.find((e) => {
-    // a. Direct WhatsApp LID / JID match
+    // a. Direct WhatsApp chat LID / JID match (set during login)
     const anyE = e as any;
-    if (anyE.whatsappLid === from || anyE.whatsappJid === from) return true;
+    if (anyE.whatsappLid && anyE.whatsappLid === from) return true;
+    if (anyE.whatsappJid && anyE.whatsappJid === from) return true;
 
-    // b. Phone digits match
-    if (senderLast10) {
+    // b. Exact phone number digits match (if from has actual phone digits)
+    if (senderLast10 && from.endsWith('@s.whatsapp.net')) {
       const userDigits = (e.username || '').replace(/\D/g, '');
       const mobileDigits = (e.mobileNumber || '').replace(/\D/g, '');
       if (userDigits.length >= 10 && userDigits.endsWith(senderLast10)) return true;
       if (mobileDigits.length >= 10 && mobileDigits.endsWith(senderLast10)) return true;
-    }
-
-    // c. Sender PushName match against Employee Name (e.g. "Aditya Upadhyay")
-    if (senderName && senderName !== 'User') {
-      const sNorm = senderName.toLowerCase().replace(/[^a-z0-9]/g, ' ').trim();
-      const eNorm = e.name.toLowerCase().replace(/[^a-z0-9]/g, ' ').trim();
-      if (sNorm.length > 3 && (sNorm === eNorm || (sNorm.length >= 5 && eNorm.includes(sNorm)))) {
-        return true;
-      }
     }
 
     return false;
@@ -783,8 +775,12 @@ export async function startWhatsAppBot() {
     if (m.type !== 'notify') return;
 
     for (const msg of m.messages) {
+      // Ignore messages sent by the bot itself
+      if (msg.key.fromMe) continue;
       // Don't respond to status broadcasts
       if (msg.key.remoteJid === 'status@broadcast') continue;
+      // Don't respond in group chats (attendance commands are 1-on-1 private only)
+      if (msg.key.remoteJid?.endsWith('@g.us')) continue;
 
       const from = msg.key.remoteJid;
       if (!from) continue;
