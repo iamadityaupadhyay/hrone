@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "cloud:start": "node scripts/cloud-start.js",
     "worker": "tsx src/worker/scheduler.ts",
     "whatsapp": "tsx src/whatsapp/bot.ts",
     "lint": "eslint"

@@ -1,2 +1,1 @@
-worker: npm run worker
-web: npm start
+web: node scripts/cloud-start.js

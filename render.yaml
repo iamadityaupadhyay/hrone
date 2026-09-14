@@ -4,7 +4,7 @@ services:
     runtime: node
     plan: free
     buildCommand: npm install && npm run build
-    startCommand: npm run start & npm run worker
+    startCommand: node scripts/cloud-start.js
     envVars:
       - key: MONGODB_URI
         sync: false
