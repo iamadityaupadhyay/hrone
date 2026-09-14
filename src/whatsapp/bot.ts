@@ -81,6 +81,8 @@ async function handleCommand(from: string, commandText: string, senderName: stri
       `📌 *status* - View your attendance status today\n` +
       `🟢 *in* (or *punch in*) - Mark your Check-In now\n` +
       `🔴 *out* (or *punch out*) - Mark your Check-Out now\n` +
+      `⏸️ *pause* (or *stop*) - Turn OFF your auto-attendance\n` +
+      `▶️ *resume* (or *start*) - Turn ON your auto-attendance\n` +
       `🔄 *refresh* - Extend your login session\n` +
       `📜 *logs* - View recent attendance logs\n` +
       `👥 *team* - View attendance for all team members\n` +
@@ -203,6 +205,106 @@ async function handleCommand(from: string, commandText: string, senderName: stri
       replyMsg += `• *${emp.name}*: ${res.success ? '✅ Success' : `❌ ${res.error}`}\n`;
     }
     await sock.sendMessage(from, { text: replyMsg });
+    return;
+  }
+
+  // 4c. PAUSE / STOP AUTO-ATTENDANCE
+  if (cmd === 'pause' || cmd === 'stop' || cmd === 'off' || cmd === 'leave' || cmd === 'pause today') {
+    const db = await getDatabase();
+    if (matchedEmp) {
+      await db.collection('employees').updateOne(
+        { employeeId: matchedEmp.employeeId },
+        {
+          $set: {
+            status: 'PAUSED',
+            'schedule.active': false,
+            updatedAt: new Date().toISOString(),
+          },
+        }
+      );
+
+      const pauseMsg = `⏸️ *Auto-Attendance Paused for ${matchedEmp.name}*\n\n` +
+        `Your automated autopilot has been turned *OFF*.\n` +
+        `• No automated punches will run for your account.\n` +
+        `• You can still manually clock in/out with *in* or *out*.\n` +
+        `• To turn auto-attendance back on, simply reply *resume* or *start*.`;
+
+      await sock.sendMessage(from, { text: pauseMsg });
+      return;
+    }
+
+    await sock.sendMessage(from, {
+      text: `⚠️ Could not match your number to a specific employee.\nReply *pause all* to pause the entire team.`,
+    });
+    return;
+  }
+
+  if (cmd === 'pause all' || cmd === 'stop all') {
+    const db = await getDatabase();
+    await db.collection('employees').updateMany(
+      {},
+      {
+        $set: {
+          status: 'PAUSED',
+          'schedule.active': false,
+          updatedAt: new Date().toISOString(),
+        },
+      }
+    );
+
+    await sock.sendMessage(from, {
+      text: `⏸️ *Auto-Attendance Paused for ALL Employees.*\nAutopilot is now suspended for the entire team.`,
+    });
+    return;
+  }
+
+  // 4d. RESUME / START AUTO-ATTENDANCE
+  if (cmd === 'resume' || cmd === 'start' || cmd === 'on' || cmd === 'active') {
+    const db = await getDatabase();
+    if (matchedEmp) {
+      await db.collection('employees').updateOne(
+        { employeeId: matchedEmp.employeeId },
+        {
+          $set: {
+            status: 'ACTIVE',
+            'schedule.active': true,
+            updatedAt: new Date().toISOString(),
+          },
+        }
+      );
+
+      const resumeMsg = `▶️ *Auto-Attendance Resumed for ${matchedEmp.name}!*\n\n` +
+        `Your automated autopilot is now *ON*.\n` +
+        `• Check-In window: ${matchedEmp.schedule.checkInMin} - ${matchedEmp.schedule.checkInMax}\n` +
+        `• Check-Out window: ${matchedEmp.schedule.checkOutMin} - ${matchedEmp.schedule.checkOutMax}\n` +
+        `• The worker will autonomously handle your attendance.`;
+
+      await sock.sendMessage(from, { text: resumeMsg });
+      return;
+    }
+
+    await sock.sendMessage(from, {
+      text: `⚠️ Could not match your number to a specific employee.\nReply *resume all* to resume the entire team.`,
+    });
+    return;
+  }
+
+  if (cmd === 'resume all' || cmd === 'start all') {
+    const db = await getDatabase();
+    await db.collection('employees').updateMany(
+      {},
+      {
+        $set: {
+          status: 'ACTIVE',
+          'schedule.active': true,
+          updatedAt: new Date().toISOString(),
+        },
+      }
+    );
+
+    await sock.sendMessage(from, {
+      text: `▶️ *Auto-Attendance Resumed for ALL Employees.*\nAutopilot is now active for the entire team.`,
+    });
     return;
   }
 
