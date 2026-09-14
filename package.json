@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
+    "start": "next start -H 0.0.0.0 -p ${PORT:-3000}",
     "cloud:start": "node scripts/cloud-start.js",
     "worker": "tsx src/worker/scheduler.ts",
     "whatsapp": "tsx src/whatsapp/bot.ts",
