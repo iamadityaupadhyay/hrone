@@ -12,6 +12,7 @@ import pino from 'pino';
 import path from 'path';
 import fs from 'fs';
 import { getAllEmployees } from '../lib/db/employees';
+import { loginWithHROne } from '../lib/hrone/auth';
 import { executePunch, getISTPunchTime } from '../lib/hrone/punch';
 import { refreshHROneToken } from '../lib/hrone/token';
 import { getDatabase } from '../lib/mongodb';
@@ -149,6 +150,93 @@ async function handleCommand(from: string, commandText: string, senderName: stri
     }
   }
 
+  // 2b. DIRECT HROne LOGIN COMMAND: login <username> <password>
+  if (cmd.startsWith('login ')) {
+    const rawArgs = commandText.trim().slice(6).trim();
+    const parts = rawArgs.split(/\s+/);
+    const username = parts[0];
+    const password = parts.slice(1).join(' ');
+
+    if (!username || !password) {
+      await sock.sendMessage(from, {
+        text: `⚠️ *Login Command Format:*\n\nReply: *login <username> <password>*\nExample: *login E1885 MyPassword*`,
+      });
+      return;
+    }
+
+    await sock.sendMessage(from, { text: `🔐 Authenticating with HROne Cloud for *${username}*...` });
+
+    const loginRes = await loginWithHROne(username, password, 'uharvest');
+
+    if (!loginRes.success || !loginRes.accessToken || !loginRes.employeeId) {
+      await sock.sendMessage(from, {
+        text: `❌ *Login Failed:*\n\n${loginRes.error || 'Invalid credentials'}\n\nPlease verify your username/password and try again.`,
+      });
+      return;
+    }
+
+    const db = await getDatabase();
+    const existing = await db.collection('employees').findOne({ employeeId: loginRes.employeeId });
+
+    if (existing) {
+      await db.collection('employees').updateOne(
+        { employeeId: loginRes.employeeId },
+        {
+          $set: {
+            jwtToken: loginRes.accessToken,
+            refreshToken: loginRes.refreshToken || existing.refreshToken,
+            tokenExpiry: loginRes.tokenExpiry,
+            refreshTokenExpiry: loginRes.refreshTokenExpiry,
+            whatsappLid: from,
+            whatsappName: senderName,
+            status: 'ACTIVE',
+            updatedAt: new Date().toISOString(),
+          },
+        }
+      );
+    } else {
+      await db.collection('employees').insertOne({
+        employeeId: loginRes.employeeId,
+        name: loginRes.name || username,
+        username: loginRes.username || username,
+        companyDomainCode: loginRes.domainCode || 'uharvest',
+        jwtToken: loginRes.accessToken,
+        refreshToken: loginRes.refreshToken || '',
+        tokenExpiry: loginRes.tokenExpiry,
+        refreshTokenExpiry: loginRes.refreshTokenExpiry,
+        latitude: '28.5004327',
+        longitude: '77.4150811',
+        geoAccuracy: '12.126',
+        geoLocation: '210-211, altF, Sector 142, Noida, Uttar Pradesh 201304, India',
+        schedule: {
+          active: true,
+          checkInMin: '08:00',
+          checkInMax: '10:00',
+          checkOutMin: '18:00',
+          checkOutMax: '20:00',
+          workingDays: [1, 2, 3, 4, 5, 6],
+        },
+        status: 'ACTIVE',
+        whatsappLid: from,
+        whatsappName: senderName,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+    }
+
+    await sock.sendMessage(from, {
+      text:
+        `🎉 *Login Successful!*\n\n` +
+        `Welcome *${loginRes.name}* (ID: ${loginRes.employeeId})!\n\n` +
+        `✅ Linked to this WhatsApp chat\n` +
+        `✅ Authenticated with HROne Cloud\n` +
+        `✅ 7-Day Sliding Session Active\n` +
+        `✅ Auto-Pilot Ready\n\n` +
+        `Send *status* to see your dashboard, or *in* / *out* to punch attendance!`,
+    });
+    return;
+  }
+
   // If matched, ensure whatsappLid is saved to MongoDB for fast zero-latency future lookups
   if (matchedEmp && (matchedEmp as any).whatsappLid !== from) {
     try {
@@ -180,9 +268,13 @@ async function handleCommand(from: string, commandText: string, senderName: stri
     } else {
       const unlinkedMsg =
         `👋 *Hello ${senderName}!*\n\n` +
-        `🤖 *HROne Attendance Bot*\n\n` +
-        `🔒 Your WhatsApp account is not linked to an employee profile yet.\n\n` +
-        `To link your account, reply:\n` +
+        `🤖 *HROne Personal Attendance Bot*\n\n` +
+        `🔒 *Login / Link Required*\n\n` +
+        `Choose one of the options to activate your account:\n\n` +
+        `1️⃣ *Direct HROne Login:*\n` +
+        `👉 *login <username> <password>*\n` +
+        `Example: *login E1885 MyPassword*\n\n` +
+        `2️⃣ *Quick Link (If already enrolled):*\n` +
         `👉 *link <Your Employee ID or Username>*\n` +
         `Example: *link 2357* or *link E1885*`;
       await sock.sendMessage(from, { text: unlinkedMsg });
@@ -195,8 +287,11 @@ async function handleCommand(from: string, commandText: string, senderName: stri
     await sock.sendMessage(from, {
       text:
         `🔒 *Authentication Required*\n\n` +
-        `We could not identify your employee profile from this WhatsApp account.\n\n` +
-        `To securely link your account, please reply:\n` +
+        `Your WhatsApp is not authenticated yet. Choose an option:\n\n` +
+        `1️⃣ *Direct HROne Login:*\n` +
+        `👉 *login <username> <password>*\n` +
+        `Example: *login E1885 MyPassword*\n\n` +
+        `2️⃣ *Quick Link:*\n` +
         `👉 *link <Your Employee ID or Username>*\n` +
         `Example: *link 2357* or *link E1885*`,
     });

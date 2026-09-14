@@ -63,7 +63,12 @@ export default function AttendanceDashboard() {
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [importTab, setImportTab] = useState<'curl' | 'manual'>('curl');
+  const [importTab, setImportTab] = useState<'login' | 'curl' | 'manual'>('login');
+  const [loginForm, setLoginForm] = useState({
+    username: '',
+    password: '',
+    companyDomainCode: 'uharvest',
+  });
   const [rawCurl, setRawCurl] = useState('');
   const [menuOpenId, setMenuOpenId] = useState<number | null>(null);
   const [manualForm, setManualForm] = useState({
@@ -82,6 +87,31 @@ export default function AttendanceDashboard() {
     longitude: '77.4150811',
     geoAccuracy: '12.126',
   });
+
+  const handleDirectLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setActionLoading('login');
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(loginForm),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setFeedback({ type: 'success', message: data.message });
+        setIsModalOpen(false);
+        setLoginForm({ username: '', password: '', companyDomainCode: 'uharvest' });
+        fetchData();
+      } else {
+        setFeedback({ type: 'error', message: data.error || 'Authentication failed' });
+      }
+    } catch {
+      setFeedback({ type: 'error', message: 'Failed to contact authentication server' });
+    } finally {
+      setActionLoading(null);
+    }
+  };
 
   const fetchData = useCallback(async () => {
     try {
@@ -653,12 +683,22 @@ export default function AttendanceDashboard() {
             </div>
 
             {/* Tabs */}
-            <div className="flex rounded-lg bg-slate-950 p-1 border border-slate-800 text-xs font-semibold">
+            <div className="flex rounded-lg bg-slate-950 p-1 border border-slate-800 text-xs font-semibold gap-1">
+              <button
+                type="button"
+                onClick={() => setImportTab('login')}
+                className={`flex-1 py-1.5 rounded-md transition-all flex items-center justify-center gap-1.5 ${
+                  importTab === 'login' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Key className="w-3.5 h-3.5" />
+                <span>HROne Login</span>
+              </button>
               <button
                 type="button"
                 onClick={() => setImportTab('curl')}
                 className={`flex-1 py-1.5 rounded-md transition-all flex items-center justify-center gap-1.5 ${
-                  importTab === 'curl' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'
+                  importTab === 'curl' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'
                 }`}
               >
                 <FileCode className="w-3.5 h-3.5" />
@@ -668,7 +708,7 @@ export default function AttendanceDashboard() {
                 type="button"
                 onClick={() => setImportTab('manual')}
                 className={`flex-1 py-1.5 rounded-md transition-all flex items-center justify-center gap-1.5 ${
-                  importTab === 'manual' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'
+                  importTab === 'manual' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'
                 }`}
               >
                 <Sliders className="w-3.5 h-3.5" />
@@ -676,85 +716,155 @@ export default function AttendanceDashboard() {
               </button>
             </div>
 
-            <form onSubmit={handleOnboardSubmit} className="space-y-4">
-              {importTab === 'curl' ? (
-                <div className="space-y-2">
-                  <label className="text-xs text-slate-300 block">
-                    Paste HROne cURL from DevTools:
-                  </label>
-                  <textarea
-                    rows={7}
-                    value={rawCurl}
-                    onChange={(e) => setRawCurl(e.target.value)}
-                    placeholder="curl --request POST --url https://app.hrone.cloud/api/timeoffice/... --header 'Cookie: JwtTokenCookie=...'"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs font-mono text-indigo-300 placeholder-slate-600 focus:outline-none focus:border-indigo-500"
-                  />
-                  <p className="text-[11px] text-slate-400">
-                    Auto-detects employee name, ID, credentials, and office coordinates.
+            {importTab === 'login' ? (
+              <form onSubmit={handleDirectLogin} className="space-y-4">
+                <div className="space-y-3 text-xs">
+                  <div>
+                    <label className="text-slate-300 mb-1 block font-medium">HROne Username / Employee Code</label>
+                    <input
+                      type="text"
+                      required
+                      value={loginForm.username}
+                      onChange={(e) => setLoginForm({ ...loginForm, username: e.target.value })}
+                      placeholder="E1885 or 8112299688"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white font-mono placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-slate-300 mb-1 block font-medium">HROne Password</label>
+                    <input
+                      type="password"
+                      required
+                      value={loginForm.password}
+                      onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
+                      placeholder="••••••••••••"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white font-mono placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-slate-300 mb-1 block font-medium">Company Domain Code</label>
+                    <input
+                      type="text"
+                      required
+                      value={loginForm.companyDomainCode}
+                      onChange={(e) => setLoginForm({ ...loginForm, companyDomainCode: e.target.value })}
+                      placeholder="uharvest"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white font-mono placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                  <p className="text-[11px] text-slate-400 leading-relaxed bg-slate-950/60 p-2.5 rounded-lg border border-slate-800/80">
+                    ⚡ Authenticates directly with HROne Cloud, fetches your sliding refresh token, and configures 24/7 attendance auto-pilot automatically.
                   </p>
                 </div>
-              ) : (
-                <div className="grid grid-cols-2 gap-3 text-xs">
-                  <div>
-                    <label className="text-slate-400 mb-1 block">Name</label>
-                    <input
-                      type="text"
-                      value={manualForm.name}
-                      onChange={(e) => setManualForm({ ...manualForm, name: e.target.value })}
-                      placeholder="Rachit Sharma"
-                      className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-slate-400 mb-1 block">Employee ID</label>
-                    <input
-                      type="number"
-                      value={manualForm.employeeId}
-                      onChange={(e) => setManualForm({ ...manualForm, employeeId: e.target.value })}
-                      placeholder="2358"
-                      className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-white"
-                    />
-                  </div>
-                  <div className="col-span-2">
-                    <label className="text-slate-400 mb-1 block">RefreshTokenCookie</label>
-                    <input
-                      type="text"
-                      value={manualForm.refreshToken}
-                      onChange={(e) => setManualForm({ ...manualForm, refreshToken: e.target.value })}
-                      placeholder="UUID from cookies"
-                      className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 font-mono text-indigo-300"
-                    />
-                  </div>
-                </div>
-              )}
 
-              <div className="pt-3 border-t border-slate-800 flex items-center justify-end gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-3.5 py-2 rounded-lg border border-slate-800 text-slate-400 hover:text-white text-xs"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={actionLoading === 'onboard'}
-                  className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold disabled:opacity-50 flex items-center gap-1.5"
-                >
-                  {actionLoading === 'onboard' ? (
-                    <>
-                      <RotateCw className="w-3.5 h-3.5 animate-spin" />
-                      <span>Adding...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Check className="w-3.5 h-3.5" />
-                      <span>Save Employee</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </form>
+                <div className="pt-3 border-t border-slate-800 flex items-center justify-end gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setIsModalOpen(false)}
+                    className="px-3.5 py-2 rounded-lg border border-slate-800 text-slate-400 hover:text-white text-xs"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={actionLoading === 'login'}
+                    className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold disabled:opacity-50 flex items-center gap-1.5 shadow-lg shadow-indigo-600/20"
+                  >
+                    {actionLoading === 'login' ? (
+                      <>
+                        <RotateCw className="w-3.5 h-3.5 animate-spin" />
+                        <span>Authenticating...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Key className="w-3.5 h-3.5" />
+                        <span>Log In & Enroll</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <form onSubmit={handleOnboardSubmit} className="space-y-4">
+                {importTab === 'curl' ? (
+                  <div className="space-y-2">
+                    <label className="text-xs text-slate-300 block">
+                      Paste HROne cURL from DevTools:
+                    </label>
+                    <textarea
+                      rows={7}
+                      value={rawCurl}
+                      onChange={(e) => setRawCurl(e.target.value)}
+                      placeholder="curl --request POST --url https://app.hrone.cloud/api/timeoffice/... --header 'Cookie: JwtTokenCookie=...'"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs font-mono text-indigo-300 placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+                    />
+                    <p className="text-[11px] text-slate-400">
+                      Auto-detects employee name, ID, credentials, and office coordinates.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div>
+                      <label className="text-slate-400 mb-1 block">Name</label>
+                      <input
+                        type="text"
+                        value={manualForm.name}
+                        onChange={(e) => setManualForm({ ...manualForm, name: e.target.value })}
+                        placeholder="Rachit Sharma"
+                        className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 mb-1 block">Employee ID</label>
+                      <input
+                        type="number"
+                        value={manualForm.employeeId}
+                        onChange={(e) => setManualForm({ ...manualForm, employeeId: e.target.value })}
+                        placeholder="2358"
+                        className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-white"
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <label className="text-slate-400 mb-1 block">RefreshTokenCookie</label>
+                      <input
+                        type="text"
+                        value={manualForm.refreshToken}
+                        onChange={(e) => setManualForm({ ...manualForm, refreshToken: e.target.value })}
+                        placeholder="UUID from cookies"
+                        className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 font-mono text-indigo-300"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div className="pt-3 border-t border-slate-800 flex items-center justify-end gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setIsModalOpen(false)}
+                    className="px-3.5 py-2 rounded-lg border border-slate-800 text-slate-400 hover:text-white text-xs"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={actionLoading === 'onboard'}
+                    className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold disabled:opacity-50 flex items-center gap-1.5"
+                  >
+                    {actionLoading === 'onboard' ? (
+                      <>
+                        <RotateCw className="w-3.5 h-3.5 animate-spin" />
+                        <span>Adding...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Save Employee</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}
