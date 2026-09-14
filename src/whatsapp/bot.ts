@@ -49,6 +49,32 @@ export async function sendWhatsAppNotification(message: string, recipientJid?: s
 }
 
 /**
+ * Cleanly format any timestamp or ISO string into Asia/Kolkata (IST) display format
+ */
+function formatISTDisplay(timeStr?: string | null): string {
+  if (!timeStr) return '';
+  if (timeStr.includes('T') && !timeStr.endsWith('Z')) {
+    const parts = timeStr.split('T');
+    const timePart = parts[1] || '';
+    const [hourStr, minStr] = timePart.split(':');
+    const hour = parseInt(hourStr || '0', 10);
+    const ampm = hour >= 12 ? 'PM' : 'AM';
+    const displayHour = hour % 12 === 0 ? 12 : hour % 12;
+    return `${displayHour}:${minStr} ${ampm} IST`;
+  }
+  const d = new Date(timeStr);
+  if (isNaN(d.getTime())) return timeStr;
+  return (
+    d.toLocaleTimeString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    }) + ' IST'
+  );
+}
+
+/**
  * Handle incoming WhatsApp commands with strict per-employee privacy and data isolation
  */
 async function handleCommand(from: string, commandText: string, senderName: string) {
@@ -177,49 +203,93 @@ async function handleCommand(from: string, commandText: string, senderName: stri
     return;
   }
 
-  // 4. STATUS (Strictly for this sender only)
+  // 4. STATUS (Strictly for this sender only - Live HROne and MongoDB query)
   if (cmd === 'status' || cmd === 'today') {
+    const db = await getDatabase();
     const istTime = getISTPunchTime();
     const todayStr = istTime.split('T')[0];
 
-    const inDone = matchedEmp.todayPunch?.date === todayStr && matchedEmp.todayPunch.checkInStatus === 'SUCCESS';
-    const outDone = matchedEmp.todayPunch?.date === todayStr && matchedEmp.todayPunch.checkOutStatus === 'SUCCESS';
+    // Query real live punch records from MongoDB for this employee today
+    const todayLogs = await db
+      .collection('punch_logs')
+      .find({
+        employeeId: matchedEmp.employeeId,
+        $or: [
+          { punchTime: { $regex: `^${todayStr}` } },
+          { executedAt: { $gte: new Date(`${todayStr}T00:00:00.000Z`).toISOString() } },
+        ],
+        success: true,
+      })
+      .sort({ executedAt: 1 })
+      .toArray();
 
-    let statusMsg = `📊 *Your Attendance Status (${todayStr})*\n`;
+    const inLog = todayLogs.find((l) => l.punchType === 'CHECK_IN');
+    const outLog = todayLogs.find((l) => l.punchType === 'CHECK_OUT');
+
+    let statusMsg = `📊 *Your Live Attendance Status*\n`;
+    statusMsg += `📅 *Date:* ${todayStr}\n`;
     statusMsg += `👤 *${matchedEmp.name}* (ID: ${matchedEmp.employeeId})\n\n`;
-    statusMsg += `• Check-In: ${inDone ? `✅ Done at ${matchedEmp.todayPunch?.checkedInAt?.split('T')[1]?.slice(0, 5)} IST` : `⏳ Scheduled (${matchedEmp.todayPunch?.plannedCheckIn || matchedEmp.schedule.checkInMin})`}\n`;
-    statusMsg += `• Check-Out: ${outDone ? `✅ Done at ${matchedEmp.todayPunch?.checkedOutAt?.split('T')[1]?.slice(0, 5)} IST` : `⏳ Scheduled (${matchedEmp.todayPunch?.plannedCheckOut || matchedEmp.schedule.checkOutMin})`}\n`;
+
+    if (inLog) {
+      const refCode = (inLog.responsePayload as any)?.messageCode;
+      statusMsg += `• Check-In: ✅ *Done at ${formatISTDisplay(inLog.punchTime || inLog.executedAt)}* (${inLog.triggerType || 'AUTOMATED'}${refCode ? `, Ref: ${refCode}` : ''})\n`;
+    } else if (matchedEmp.todayPunch?.checkInStatus === 'SUCCESS' && matchedEmp.todayPunch.checkedInAt) {
+      statusMsg += `• Check-In: ✅ *Done at ${formatISTDisplay(matchedEmp.todayPunch.checkedInAt)}*\n`;
+    } else {
+      statusMsg += `• Check-In: ⏳ *Scheduled* (${matchedEmp.todayPunch?.plannedCheckIn || matchedEmp.schedule.checkInMin} IST)\n`;
+    }
+
+    if (outLog) {
+      const refCode = (outLog.responsePayload as any)?.messageCode;
+      statusMsg += `• Check-Out: ✅ *Done at ${formatISTDisplay(outLog.punchTime || outLog.executedAt)}* (${outLog.triggerType || 'AUTOMATED'}${refCode ? `, Ref: ${refCode}` : ''})\n`;
+    } else if (matchedEmp.todayPunch?.checkOutStatus === 'SUCCESS' && matchedEmp.todayPunch.checkedOutAt) {
+      statusMsg += `• Check-Out: ✅ *Done at ${formatISTDisplay(matchedEmp.todayPunch.checkedOutAt)}*\n`;
+    } else {
+      statusMsg += `• Check-Out: ⏳ *Scheduled* (${matchedEmp.todayPunch?.plannedCheckOut || matchedEmp.schedule.checkOutMin} IST)\n`;
+    }
+
     statusMsg += `• Auto-Pilot: ${matchedEmp.schedule.active && matchedEmp.status === 'ACTIVE' ? '🟢 Active' : '⏸️ Paused'}\n`;
+    statusMsg += `📍 Location: ${matchedEmp.geoLocation || 'Office'}\n`;
 
     if (matchedEmp.refreshTokenExpiry) {
       const daysLeft = Math.ceil(
         (new Date(matchedEmp.refreshTokenExpiry).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
       );
-      statusMsg += `• Session: ${daysLeft > 0 ? `🟢 ${daysLeft} days left` : '🔴 Expired'}\n`;
+      statusMsg += `🔑 Cloud Session: ${daysLeft > 0 ? `🟢 Active (${daysLeft} days left)` : '🔴 Expired'}\n`;
     }
-    statusMsg += `\n_Send *in* to punch in, or *out* to punch out!_`;
+    statusMsg += `\n_Send *in* to mark Check-In, or *out* for Check-Out!_`;
 
     await sock.sendMessage(from, { text: statusMsg });
     return;
   }
 
-  // 5. PUNCH IN (Strictly for this sender only)
+  // 5. PUNCH IN (Strictly for this sender only - Live HROne API execution)
   if (cmd === 'punch in' || cmd === 'in' || cmd === 'check in' || cmd === 'checkin') {
-    await sock.sendMessage(from, { text: `⏳ Marking Check-In for *${matchedEmp.name}*...` });
+    await sock.sendMessage(from, { text: `⏳ Contacting HROne Cloud to mark Check-In for *${matchedEmp.name}*...` });
     const res = await executePunch(matchedEmp, 'CHECK_IN', 'MANUAL');
+    const refCode = (res.responsePayload as any)?.messageCode;
     const replyMsg = res.success
-      ? `🟢 *Check-In Successful!*\n\nMarked Check-In for *${matchedEmp.name}* at *${getISTPunchTime().split('T')[1].slice(0, 5)} IST*.\n📍 Location: ${matchedEmp.geoLocation || 'Office'}`
+      ? `🟢 *Check-In Successful!*\n\n` +
+        `👤 *${matchedEmp.name}*\n` +
+        `⏰ Time: *${formatISTDisplay(res.punchTime)}*\n` +
+        `📍 Location: ${matchedEmp.geoLocation || 'Office'}\n` +
+        `⚡ HROne Ref: ${refCode || 'Record saved successfully'}`
       : `❌ *Check-In Failed:*\n\n${res.error}`;
     await sock.sendMessage(from, { text: replyMsg });
     return;
   }
 
-  // 6. PUNCH OUT (Strictly for this sender only)
+  // 6. PUNCH OUT (Strictly for this sender only - Live HROne API execution)
   if (cmd === 'punch out' || cmd === 'out' || cmd === 'check out' || cmd === 'checkout') {
-    await sock.sendMessage(from, { text: `⏳ Marking Check-Out for *${matchedEmp.name}*...` });
+    await sock.sendMessage(from, { text: `⏳ Contacting HROne Cloud to mark Check-Out for *${matchedEmp.name}*...` });
     const res = await executePunch(matchedEmp, 'CHECK_OUT', 'MANUAL');
+    const refCode = (res.responsePayload as any)?.messageCode;
     const replyMsg = res.success
-      ? `🔴 *Check-Out Successful!*\n\nMarked Check-Out for *${matchedEmp.name}* at *${getISTPunchTime().split('T')[1].slice(0, 5)} IST*.\n📍 Location: ${matchedEmp.geoLocation || 'Office'}`
+      ? `🔴 *Check-Out Successful!*\n\n` +
+        `👤 *${matchedEmp.name}*\n` +
+        `⏰ Time: *${formatISTDisplay(res.punchTime)}*\n` +
+        `📍 Location: ${matchedEmp.geoLocation || 'Office'}\n` +
+        `⚡ HROne Ref: ${refCode || 'Record saved successfully'}`
       : `❌ *Check-Out Failed:*\n\n${res.error}`;
     await sock.sendMessage(from, { text: replyMsg });
     return;
@@ -303,11 +373,14 @@ async function handleCommand(from: string, commandText: string, senderName: stri
 
     let replyMsg = `📜 *Your Recent Punch Activity (Last 5)*\n\n`;
     for (const l of logs) {
-      const timeStr = new Date(l.executedAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+      const timeStr = formatISTDisplay(l.punchTime || l.executedAt);
       const statusIcon = l.success ? '✅' : '❌';
-      replyMsg += `${statusIcon} *${l.punchType}*\n`;
-      replyMsg += `  Time: ${timeStr}\n`;
-      replyMsg += `  Mode: ${l.triggerType || 'AUTOMATED'}\n\n`;
+      const refCode = (l.responsePayload as any)?.messageCode;
+      replyMsg += `${statusIcon} *${l.punchType}* (${l.triggerType || 'AUTOMATED'})\n`;
+      replyMsg += `  ⏰ ${timeStr}\n`;
+      if (refCode) replyMsg += `  ⚡ HROne Ref: ${refCode}\n`;
+      if (l.error) replyMsg += `  ⚠️ Reason: ${l.error}\n`;
+      replyMsg += `\n`;
     }
 
     await sock.sendMessage(from, { text: replyMsg });
