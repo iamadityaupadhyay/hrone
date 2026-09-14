@@ -80,8 +80,8 @@ async function handleCronTrigger(req: NextRequest) {
         // Evening Window (5:00 PM - 11:00 PM) -> Check Out
         const [inStartH] = (emp.schedule.checkInMin || '08:00').split(':').map(Number);
         const [inEndH] = (emp.schedule.checkInMax || '10:00').split(':').map(Number);
-        const [outStartH] = (emp.schedule.checkOutMin || '18:00').split(':').map(Number);
-        const [outEndH] = (emp.schedule.checkOutMax || '20:00').split(':').map(Number);
+        const [outStartH] = (emp.schedule.checkOutMin || '19:00').split(':').map(Number);
+        const [outEndH] = (emp.schedule.checkOutMax || '21:00').split(':').map(Number);
 
         // Generous window bounds for automated cloud crons
         const morningWindowStart = Math.min(inStartH, 8);

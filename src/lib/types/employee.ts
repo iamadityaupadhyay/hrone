@@ -2,8 +2,8 @@ export interface EmployeeSchedule {
   active: boolean;
   checkInMin: string; // "09:00"
   checkInMax: string; // "10:00"
-  checkOutMin: string; // "18:00"
-  checkOutMax: string; // "20:00"
+  checkOutMin: string; // "19:00" (7:00 PM)
+  checkOutMax: string; // "21:00" (9:00 PM)
   workingDays: number[]; // [1, 2, 3, 4, 5] -> Mon to Fri
 }
 

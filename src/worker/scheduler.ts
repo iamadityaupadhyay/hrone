@@ -105,8 +105,8 @@ async function runSchedulerTick() {
         emp.schedule.checkInMax || '10:00'
       );
       const plannedOut = generateRandomPunchTime(
-        emp.schedule.checkOutMin || '18:00',
-        emp.schedule.checkOutMax || '20:00'
+        emp.schedule.checkOutMin || '19:00',
+        emp.schedule.checkOutMax || '21:00'
       );
 
       todayPunch = {
