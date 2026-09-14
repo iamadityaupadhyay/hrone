@@ -279,6 +279,14 @@ async function startWorker() {
     process.exit(0);
   };
 
+  process.on('uncaughtException', (err) => {
+    console.error('[Worker Process] Uncaught Exception:', err);
+  });
+
+  process.on('unhandledRejection', (reason) => {
+    console.error('[Worker Process] Unhandled Rejection:', reason);
+  });
+
   process.on('SIGINT', cleanup);
   process.on('SIGTERM', cleanup);
 }
