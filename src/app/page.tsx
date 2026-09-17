@@ -20,6 +20,11 @@ import {
   ShieldCheck,
   MessageSquare,
   Smartphone,
+  Eye,
+  EyeOff,
+  Lock,
+  ShieldAlert,
+  Save,
 } from 'lucide-react';
 import { EmployeeProfile, PunchLog } from '@/lib/types/employee';
 
@@ -51,6 +56,13 @@ export default function AttendanceDashboard() {
   const [loading, setLoading] = useState<boolean>(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  // Password Management State
+  const [showPasswordModal, setShowPasswordModal] = useState<boolean>(false);
+  const [passwordInputs, setPasswordInputs] = useState<Record<number, string>>({});
+  const [showPasswordVisibility, setShowPasswordVisibility] = useState<Record<number, boolean>>({});
+  const [savingPasswordId, setSavingPasswordId] = useState<number | null>(null);
+  const [passwordSaveStatus, setPasswordSaveStatus] = useState<Record<number, string>>({});
 
   // WhatsApp Bot State
   const [showWhatsAppModal, setShowWhatsAppModal] = useState<boolean>(false);
@@ -189,7 +201,37 @@ export default function AttendanceDashboard() {
     }
   };
 
-  const handleRefreshToken = async (employeeId: number) => {
+  const handleLoginAll = async (forcePassword = false) => {
+    setActionLoading('login-all');
+    setFeedback(null);
+    try {
+      const res = await fetch('/api/employees/login-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ forcePassword }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setFeedback({
+          type: 'success',
+          message: data.message || 'All employees logged in successfully!',
+        });
+      } else {
+        setFeedback({
+          type: 'error',
+          message: data.message || data.error || 'Some logins failed.',
+        });
+      }
+      fetchData();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Bulk login failed';
+      setFeedback({ type: 'error', message: msg });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleRefreshToken = async (employeeId: number, forcePassword = false) => {
     const actionKey = `refresh-${employeeId}`;
     setActionLoading(actionKey);
     setMenuOpenId(null);
@@ -198,13 +240,15 @@ export default function AttendanceDashboard() {
     try {
       const res = await fetch(`/api/employees/${employeeId}/refresh`, {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ forcePassword }),
       });
       const data = await res.json();
 
       if (data.success) {
         setFeedback({
           type: 'success',
-          message: 'Session refreshed successfully.',
+          message: data.message || 'Session logged in / refreshed successfully.',
         });
         fetchData();
       } else {
@@ -216,6 +260,64 @@ export default function AttendanceDashboard() {
     } finally {
       setActionLoading(null);
     }
+  };
+
+  const handleSavePassword = async (employee: EmployeeProfile, passToSave?: string) => {
+    const pwd = passToSave !== undefined ? passToSave : passwordInputs[employee.employeeId];
+    if (!pwd || !pwd.trim()) {
+      setPasswordSaveStatus((prev) => ({ ...prev, [employee.employeeId]: '⚠️ Password cannot be blank' }));
+      return;
+    }
+
+    setSavingPasswordId(employee.employeeId);
+    setPasswordSaveStatus((prev) => ({ ...prev, [employee.employeeId]: 'Saving & verifying...' }));
+
+    try {
+      const res = await fetch(`/api/employees/${employee.employeeId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: pwd.trim() }),
+      });
+      const data = await res.json();
+      if (!data.success) {
+        setPasswordSaveStatus((prev) => ({ ...prev, [employee.employeeId]: `❌ Failed: ${data.error}` }));
+        return;
+      }
+
+      // Verify login using password
+      const reauthRes = await fetch(`/api/employees/${employee.employeeId}/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ forcePassword: true }),
+      });
+      const reauthData = await reauthRes.json();
+
+      if (reauthData.success) {
+        setPasswordSaveStatus((prev) => ({ ...prev, [employee.employeeId]: '✅ Password saved & verified!' }));
+      } else {
+        setPasswordSaveStatus((prev) => ({
+          ...prev,
+          [employee.employeeId]: `⚠️ Saved, but login warning: ${reauthData.error || 'Check credentials'}`,
+        }));
+      }
+      fetchData();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to save';
+      setPasswordSaveStatus((prev) => ({ ...prev, [employee.employeeId]: `❌ Error: ${msg}` }));
+    } finally {
+      setSavingPasswordId(null);
+    }
+  };
+
+  const handleSaveAllPasswords = async () => {
+    setActionLoading('save-all-passwords');
+    for (const emp of employees) {
+      const pwd = passwordInputs[emp.employeeId];
+      if (pwd && pwd.trim()) {
+        await handleSavePassword(emp, pwd.trim());
+      }
+    }
+    setActionLoading(null);
   };
 
   const handleToggleActive = async (employee: EmployeeProfile) => {
@@ -372,6 +474,28 @@ export default function AttendanceDashboard() {
               <RotateCw className={`w-4 h-4 ${loading ? 'animate-spin text-indigo-400' : ''}`} />
             </button>
             <button
+              onClick={() => setShowPasswordModal(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900/60 border border-slate-800 text-slate-300 hover:text-white hover:border-slate-700 text-xs font-semibold transition-all active:scale-95 relative"
+              title="Manage Passwords"
+            >
+              <Lock className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Passwords</span>
+              {employees.filter((e) => !e.password).length > 0 && (
+                <span className="px-1.5 py-0.5 text-[10px] bg-amber-500 text-slate-950 font-extrabold rounded-full animate-pulse">
+                  {employees.filter((e) => !e.password).length}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => handleLoginAll(true)}
+              disabled={actionLoading === 'login-all'}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 text-xs font-semibold transition-all active:scale-95 disabled:opacity-50"
+              title="Login/Re-authenticate all users with saved passwords"
+            >
+              <Key className={`w-3.5 h-3.5 text-amber-400 ${actionLoading === 'login-all' ? 'animate-spin' : ''}`} />
+              <span>{actionLoading === 'login-all' ? 'Logging in...' : 'Login All Users'}</span>
+            </button>
+            <button
               onClick={() => setIsModalOpen(true)}
               className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-md shadow-indigo-600/20 transition-all active:scale-95"
             >
@@ -420,6 +544,40 @@ export default function AttendanceDashboard() {
             <span>Today: <strong className="text-slate-200">{new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</strong></span>
           </div>
         </div>
+
+        {/* Missing Password Warning Banner */}
+        {employees.filter((e) => !e.password).length > 0 && (
+          <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 flex items-center justify-between text-xs transition-all shadow-lg shadow-amber-500/5">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-400 flex-shrink-0">
+                <Key className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="font-bold text-amber-200 text-sm">
+                  {employees.filter((e) => !e.password).length}{' '}
+                  {employees.filter((e) => !e.password).length === 1 ? 'Employee has' : 'Employees have'} no saved password
+                </h4>
+                <p className="text-[11px] text-amber-300/80 mt-0.5">
+                  Missing password for:{' '}
+                  <strong className="text-amber-200">
+                    {employees
+                      .filter((e) => !e.password)
+                      .map((e) => e.name)
+                      .join(', ')}
+                  </strong>
+                  . Save their passwords so automatic background re-authentication works seamlessly.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowPasswordModal(true)}
+              className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shadow-md transition-all active:scale-95 flex-shrink-0 flex items-center gap-1.5"
+            >
+              <Lock className="w-3.5 h-3.5" />
+              <span>Save Passwords</span>
+            </button>
+          </div>
+        )}
 
         {/* Employees Grid */}
         {employees.length === 0 && !loading ? (
@@ -500,14 +658,23 @@ export default function AttendanceDashboard() {
 
                         {/* Dropdown Menu */}
                         {isMenuOpen && (
-                          <div className="absolute right-0 top-8 z-20 w-44 rounded-xl bg-slate-900 border border-slate-800 shadow-xl py-1 text-xs text-slate-300">
+                          <div className="absolute right-0 top-8 z-20 w-48 rounded-xl bg-slate-900 border border-slate-800 shadow-xl py-1 text-xs text-slate-300">
                             <button
-                              onClick={() => handleRefreshToken(emp.employeeId)}
+                              onClick={() => handleRefreshToken(emp.employeeId, false)}
                               className="w-full px-3 py-2 text-left hover:bg-slate-800 flex items-center gap-2 text-slate-300"
                             >
                               <RefreshCw className="w-3.5 h-3.5 text-indigo-400" />
                               <span>Refresh Session</span>
                             </button>
+                            {emp.password && (
+                              <button
+                                onClick={() => handleRefreshToken(emp.employeeId, true)}
+                                className="w-full px-3 py-2 text-left hover:bg-amber-500/10 flex items-center gap-2 text-amber-300"
+                              >
+                                <Key className="w-3.5 h-3.5 text-amber-400" />
+                                <span>Re-login with Password</span>
+                              </button>
+                            )}
                             <button
                               onClick={() => emp._id && handleDeleteEmployee(emp._id, emp.name)}
                               className="w-full px-3 py-2 text-left hover:bg-rose-500/10 flex items-center gap-2 text-rose-400"
@@ -976,6 +1143,181 @@ export default function AttendanceDashboard() {
               >
                 Close
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Save & Manage Passwords Modal */}
+      {showPasswordModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full p-6 space-y-5 shadow-2xl relative max-h-[90vh] flex flex-col">
+            <button
+              onClick={() => setShowPasswordModal(false)}
+              className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            <div className="flex items-center gap-3 border-b border-slate-800 pb-4">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
+                <Lock className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-white">Save & Manage Employee Passwords</h3>
+                <p className="text-xs text-slate-400">
+                  Save passwords to enable automated background re-authentication and bulk login
+                </p>
+              </div>
+            </div>
+
+            <div className="overflow-y-auto space-y-3.5 pr-1 flex-1 text-xs">
+              {employees.length === 0 ? (
+                <div className="text-center py-8 text-slate-500">No employees enrolled yet.</div>
+              ) : (
+                employees.map((emp) => {
+                  const currentInput =
+                    passwordInputs[emp.employeeId] !== undefined
+                      ? passwordInputs[emp.employeeId]
+                      : emp.password || '';
+                  const isSaving = savingPasswordId === emp.employeeId;
+                  const isVisible = !!showPasswordVisibility[emp.employeeId];
+                  const statusMsg = passwordSaveStatus[emp.employeeId];
+
+                  return (
+                    <div
+                      key={emp.employeeId}
+                      className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800/80 space-y-2.5"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2.5">
+                          <div className="h-8 w-8 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-xs text-indigo-300">
+                            {emp.name
+                              .split(' ')
+                              .map((n) => n[0])
+                              .slice(0, 2)
+                              .join('')
+                              .toUpperCase()}
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-white">{emp.name}</span>
+                              <span className="text-[10px] font-mono bg-slate-800 px-1.5 py-0.5 rounded text-slate-400">
+                                #{emp.employeeId}
+                              </span>
+                            </div>
+                            <span className="text-[10px] text-slate-400 font-mono">
+                              Username: {emp.username || emp.employeeId}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div>
+                          {emp.password ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">
+                              <CheckCircle2 className="w-3 h-3" /> Saved
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30 font-medium animate-pulse">
+                              <Key className="w-3 h-3 text-amber-400" /> Missing
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <div className="relative flex-1">
+                          <input
+                            type={isVisible ? 'text' : 'password'}
+                            value={currentInput}
+                            onChange={(e) =>
+                              setPasswordInputs({ ...passwordInputs, [emp.employeeId]: e.target.value })
+                            }
+                            placeholder="Enter HROne Password"
+                            className="w-full bg-slate-900 border border-slate-800 rounded-lg py-2 px-3 pr-9 text-xs text-white font-mono placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+                          />
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setShowPasswordVisibility({
+                                ...showPasswordVisibility,
+                                [emp.employeeId]: !isVisible,
+                              })
+                            }
+                            className="absolute right-2.5 top-2.5 text-slate-500 hover:text-slate-300"
+                          >
+                            {isVisible ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                          </button>
+                        </div>
+
+                        <button
+                          type="button"
+                          disabled={isSaving || !currentInput.trim()}
+                          onClick={() => handleSavePassword(emp, currentInput)}
+                          className="px-3.5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold disabled:opacity-40 flex items-center gap-1.5 transition-all shadow-md shadow-indigo-600/20"
+                        >
+                          {isSaving ? (
+                            <>
+                              <RotateCw className="w-3.5 h-3.5 animate-spin" />
+                              <span>Testing...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Save className="w-3.5 h-3.5" />
+                              <span>Save & Test</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+
+                      {statusMsg && (
+                        <div
+                          className={`text-[11px] font-medium pt-0.5 ${
+                            statusMsg.includes('✅')
+                              ? 'text-emerald-400'
+                              : statusMsg.includes('⚠️')
+                              ? 'text-amber-300'
+                              : 'text-rose-400'
+                          }`}
+                        >
+                          {statusMsg}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            <div className="pt-3 border-t border-slate-800 flex items-center justify-between">
+              <span className="text-[11px] text-slate-400">
+                Passwords are used exclusively for automated HROne re-authentication.
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowPasswordModal(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold transition-colors"
+                >
+                  Done
+                </button>
+                <button
+                  onClick={handleSaveAllPasswords}
+                  disabled={actionLoading === 'save-all-passwords'}
+                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition-colors flex items-center gap-1.5 shadow-md shadow-emerald-600/20 disabled:opacity-50"
+                >
+                  {actionLoading === 'save-all-passwords' ? (
+                    <>
+                      <RotateCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Saving All...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Save All</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         </div>

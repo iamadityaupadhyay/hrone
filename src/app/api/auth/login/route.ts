@@ -28,6 +28,7 @@ export async function POST(req: NextRequest) {
       employeeId: loginRes.employeeId,
       name: loginRes.name || username,
       username: loginRes.username || username,
+      password,
       companyDomainCode: loginRes.domainCode || 'uharvest',
       jwtToken: loginRes.accessToken,
       refreshToken: loginRes.refreshToken || '',

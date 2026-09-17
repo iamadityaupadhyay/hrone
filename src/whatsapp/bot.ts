@@ -160,6 +160,8 @@ async function handleCommand(from: string, commandText: string, senderName: stri
           { employeeId: loginRes.employeeId },
           {
             $set: {
+              username: loginRes.username || username,
+              password: password,
               jwtToken: loginRes.accessToken,
               refreshToken: loginRes.refreshToken || existing.refreshToken,
               tokenExpiry: loginRes.tokenExpiry,
@@ -176,6 +178,7 @@ async function handleCommand(from: string, commandText: string, senderName: stri
           employeeId: loginRes.employeeId,
           name: loginRes.name || username,
           username: loginRes.username || username,
+          password: password,
           companyDomainCode: loginRes.domainCode || 'uharvest',
           jwtToken: loginRes.accessToken,
           refreshToken: loginRes.refreshToken || '',
@@ -323,6 +326,8 @@ async function handleCommand(from: string, commandText: string, senderName: stri
         { employeeId: loginRes.employeeId },
         {
           $set: {
+            username: loginRes.username || username,
+            password: password,
             jwtToken: loginRes.accessToken,
             refreshToken: loginRes.refreshToken || existing.refreshToken,
             tokenExpiry: loginRes.tokenExpiry,
@@ -339,6 +344,7 @@ async function handleCommand(from: string, commandText: string, senderName: stri
         employeeId: loginRes.employeeId,
         name: loginRes.name || username,
         username: loginRes.username || username,
+        password: password,
         companyDomainCode: loginRes.domainCode || 'uharvest',
         jwtToken: loginRes.accessToken,
         refreshToken: loginRes.refreshToken || '',
@@ -370,8 +376,8 @@ async function handleCommand(from: string, commandText: string, senderName: stri
         `Welcome *${loginRes.name}* (ID: ${loginRes.employeeId})!\n\n` +
         `✅ Linked to this WhatsApp chat\n` +
         `✅ Authenticated with HROne Cloud\n` +
-        `✅ 7-Day Sliding Session Active\n` +
-        `✅ Auto-Pilot Ready\n\n` +
+        `✅ Check-in and Check-out will be done automatically  \n` +
+        `✅ Focus on your work, we will take care of attendance!\n\n` +
         `Send *status* to see your dashboard, or *in* / *out* to punch attendance!`,
     });
     return;
@@ -499,14 +505,14 @@ async function handleCommand(from: string, commandText: string, senderName: stri
 
     const replyMsg = res.success
       ? `🟢 *Check-In Successful!*\n\n` +
-        `👤 *${matchedEmp.name}*\n` +
-        `⏰ Time: *${formatISTDisplay(res.punchTime)}*\n` +
-        `📍 Location: ${matchedEmp.geoLocation || 'Office'}\n\n` +
-        `*HROne API Response:*\n` +
-        `\`\`\`json\n${apiResponseStr}\n\`\`\``
+      `👤 *${matchedEmp.name}*\n` +
+      `⏰ Time: *${formatISTDisplay(res.punchTime)}*\n` +
+      `📍 Location: ${matchedEmp.geoLocation || 'Office'}\n\n` +
+      `*HROne API Response:*\n` +
+      `\`\`\`json\n${apiResponseStr}\n\`\`\``
       : `❌ *Check-In Failed:*\n\n` +
-        `*HROne API Response:*\n` +
-        `\`\`\`json\n${apiResponseStr}\n\`\`\``;
+      `*HROne API Response:*\n` +
+      `\`\`\`json\n${apiResponseStr}\n\`\`\``;
     await sock.sendMessage(from, { text: replyMsg });
     return;
   }
@@ -521,14 +527,14 @@ async function handleCommand(from: string, commandText: string, senderName: stri
 
     const replyMsg = res.success
       ? `🔴 *Check-Out Successful!*\n\n` +
-        `👤 *${matchedEmp.name}*\n` +
-        `⏰ Time: *${formatISTDisplay(res.punchTime)}*\n` +
-        `📍 Location: ${matchedEmp.geoLocation || 'Office'}\n\n` +
-        `*HROne API Response:*\n` +
-        `\`\`\`json\n${apiResponseStr}\n\`\`\``
+      `👤 *${matchedEmp.name}*\n` +
+      `⏰ Time: *${formatISTDisplay(res.punchTime)}*\n` +
+      `📍 Location: ${matchedEmp.geoLocation || 'Office'}\n\n` +
+      `*HROne API Response:*\n` +
+      `\`\`\`json\n${apiResponseStr}\n\`\`\``
       : `❌ *Check-Out Failed:*\n\n` +
-        `*HROne API Response:*\n` +
-        `\`\`\`json\n${apiResponseStr}\n\`\`\``;
+      `*HROne API Response:*\n` +
+      `\`\`\`json\n${apiResponseStr}\n\`\`\``;
     await sock.sendMessage(from, { text: replyMsg });
     return;
   }

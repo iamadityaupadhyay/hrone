@@ -1,6 +1,7 @@
 import { updateEmployeeTokens } from '@/lib/db/employees';
 import { EmployeeProfile } from '@/lib/types/employee';
 import { decodeJwtPayload } from './parser';
+import { loginWithHROne } from './auth';
 
 export interface TokenRefreshResult {
   success: boolean;
@@ -13,10 +14,10 @@ export interface TokenRefreshResult {
 }
 
 export async function refreshHROneToken(employee: EmployeeProfile): Promise<TokenRefreshResult> {
-  const { employeeId, username, companyDomainCode, refreshToken } = employee;
+  const { employeeId, username, password, companyDomainCode, refreshToken } = employee;
 
-  if (!refreshToken) {
-    return { success: false, error: 'No refresh token available for employee' };
+  if (!refreshToken && !password) {
+    return { success: false, error: 'No refresh token or password available for employee' };
   }
 
   const endpoint = 'https://gateway.app.hrone.cloud/oauth2/token';
@@ -59,6 +60,27 @@ export async function refreshHROneToken(employee: EmployeeProfile): Promise<Toke
     }
 
     if (!response.ok || !data.access_token) {
+      if (password) {
+        console.log(`[Token Refresh] Refresh token failed for ${username || employeeId}. Attempting re-auth with stored password...`);
+        const loginRes = await loginWithHROne(username || String(employeeId), password, domain);
+        if (loginRes.success && loginRes.accessToken) {
+          await updateEmployeeTokens(
+            employeeId,
+            loginRes.accessToken,
+            loginRes.refreshToken || '',
+            loginRes.tokenExpiry,
+            loginRes.refreshTokenExpiry
+          );
+          return {
+            success: true,
+            accessToken: loginRes.accessToken,
+            refreshToken: loginRes.refreshToken,
+            tokenExpiry: loginRes.tokenExpiry,
+            refreshTokenExpiry: loginRes.refreshTokenExpiry,
+          };
+        }
+      }
+
       return {
         success: false,
         error: (data.error_description as string) || (data.message as string) || `HTTP ${response.status} failed to refresh token`,
