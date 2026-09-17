@@ -1,5 +1,6 @@
 import { getEmployeeById } from '@/lib/db/employees';
 import { executePunch } from '@/lib/hrone/punch';
+import { resolveWhatsAppRecipient, sendWhatsAppNotification } from '@/whatsapp/bot';
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function POST(
@@ -19,6 +20,32 @@ export async function POST(
     const customTime = body.punchTime;
 
     const result = await executePunch(employee, punchType, 'MANUAL', customTime);
+
+    // Send WhatsApp notification
+    const recipient = resolveWhatsAppRecipient(employee);
+    if (recipient) {
+      const isCheckIn = punchType === 'CHECK_IN';
+      const title = isCheckIn ? `✅ *Good morning ${employee.name}!*` : `🔴 *Good evening ${employee.name}!*`;
+      const actionName = isCheckIn ? 'Check-In' : 'Check-Out';
+      const timeStr = customTime || result.punchTime.split('T')[1] || result.punchTime;
+
+      if (result.success) {
+        await sendWhatsAppNotification(
+          `${title}\n\n` +
+          `Your HROne ${actionName} has been marked manually.\n` +
+          `⏰ Time: *${timeStr} IST*\n` +
+          `📍 Location: ${employee.geoLocation || 'Office'}`,
+          recipient
+        );
+      } else {
+        await sendWhatsAppNotification(
+          `⚠️ *Attendance Alert for ${employee.name}*\n\n` +
+          `Manual ${actionName} attempt failed: ${result.error || 'Unknown error'}\n\n` +
+          `Reply *${isCheckIn ? 'in' : 'out'}* to retry punching manually.`,
+          recipient
+        );
+      }
+    }
 
     return NextResponse.json({
       success: result.success,

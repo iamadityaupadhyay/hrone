@@ -1,6 +1,7 @@
 import { getAllEmployees } from '@/lib/db/employees';
 import { executePunch, getISTPunchTime } from '@/lib/hrone/punch';
 import { refreshHROneToken } from '@/lib/hrone/token';
+import { resolveWhatsAppRecipient, sendWhatsAppNotification } from '@/whatsapp/bot';
 import { NextRequest, NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
@@ -135,6 +136,31 @@ async function handleCronTrigger(req: NextRequest) {
           punchTime: punchResult.punchTime,
           error: punchResult.error,
         });
+
+        // Send WhatsApp notification for automated cron punch
+        const recipient = resolveWhatsAppRecipient(emp);
+
+        if (recipient) {
+          const isCheckIn = punchTypeToRun === 'CHECK_IN';
+          const title = isCheckIn ? `✅ *Good morning ${emp.name}!*` : `🔴 *Good evening ${emp.name}!*`;
+          const actionName = isCheckIn ? 'Check-In' : 'Check-Out';
+          if (punchResult.success) {
+            await sendWhatsAppNotification(
+              `${title}\n\n` +
+              `Your HROne ${actionName} has been marked automatically.\n` +
+              `⏰ Time: *${currentIstHHMM} IST*\n` +
+              `📍 Location: ${emp.geoLocation || 'Office'}`,
+              recipient
+            );
+          } else {
+            await sendWhatsAppNotification(
+              `⚠️ *Attendance Alert for ${emp.name}*\n\n` +
+              `Automated ${actionName} attempt at *${currentIstHHMM} IST* failed: ${punchResult.error || 'Unknown error'}\n\n` +
+              `Reply *${isCheckIn ? 'in' : 'out'}* to retry punching manually.`,
+              recipient
+            );
+          }
+        }
       } else {
         results.push({
           employeeId: emp.employeeId,

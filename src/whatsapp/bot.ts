@@ -16,6 +16,7 @@ import { loginWithHROne } from '../lib/hrone/auth';
 import { executePunch, getISTPunchTime } from '../lib/hrone/punch';
 import { refreshHROneToken } from '../lib/hrone/token';
 import { getDatabase } from '../lib/mongodb';
+import { EmployeeProfile } from '../lib/types/employee';
 
 const AUTH_DIR = path.resolve(process.cwd(), '.whatsapp_auth');
 let sock: WASocket | null = null;
@@ -37,32 +38,79 @@ export function getWhatsAppBotStatus() {
 
 /**
  * Send a notification message via WhatsApp if bot is connected
+/**
+ * Resolves the WhatsApp recipient JID for an employee with multi-layer fallbacks
  */
-export async function sendWhatsAppNotification(message: string, recipientJid?: string) {
+export function resolveWhatsAppRecipient(emp: EmployeeProfile | Record<string, unknown>): string | undefined {
+  const anyEmp = emp as any;
+  if (anyEmp.whatsappLid && String(anyEmp.whatsappLid).trim()) return String(anyEmp.whatsappLid).trim();
+  if (anyEmp.whatsappJid && String(anyEmp.whatsappJid).trim()) return String(anyEmp.whatsappJid).trim();
+
+  if (anyEmp.mobileNumber) {
+    const clean = String(anyEmp.mobileNumber).replace(/\D/g, '');
+    if (clean.length === 10) return `91${clean}@s.whatsapp.net`;
+    if (clean.length >= 10) return `${clean}@s.whatsapp.net`;
+  }
+
+  if (anyEmp.username) {
+    const cleanUser = String(anyEmp.username).replace(/\D/g, '');
+    if (cleanUser.length === 10) return `91${cleanUser}@s.whatsapp.net`;
+    if (cleanUser.length >= 10) return `${cleanUser}@s.whatsapp.net`;
+  }
+
+  if (process.env.WHATSAPP_NOTIFY_NUMBER) {
+    const cleanNotify = process.env.WHATSAPP_NOTIFY_NUMBER.replace(/\D/g, '');
+    if (cleanNotify.length === 10) return `91${cleanNotify}@s.whatsapp.net`;
+    if (cleanNotify.length >= 10) return `${cleanNotify}@s.whatsapp.net`;
+  }
+
+  return undefined;
+}
+
+/**
+ * Send a notification message via WhatsApp if bot is connected, with admin fallback
+ */
+export async function sendWhatsAppNotification(message: string, recipientJid?: string): Promise<boolean> {
   if (!sock) {
-    console.warn('[WhatsApp Bot] Bot not connected. Notification skipped.');
+    console.warn('[WhatsApp Bot] Bot socket not connected. Notification skipped.');
     return false;
   }
 
+  const primaryTarget = recipientJid || process.env.WHATSAPP_NOTIFY_NUMBER;
+  if (!primaryTarget) {
+    console.warn('[WhatsApp Bot] No recipient JID or WHATSAPP_NOTIFY_NUMBER configured.');
+    return false;
+  }
+
+  const formatJid = (input: string) => {
+    if (input.includes('@')) return input;
+    const clean = input.replace(/\D/g, '');
+    const finalDigits = clean.length === 10 ? '91' + clean : clean;
+    return `${finalDigits}@s.whatsapp.net`;
+  };
+
+  const mainJid = formatJid(primaryTarget);
+
   try {
-    const targetNumber = recipientJid || process.env.WHATSAPP_NOTIFY_NUMBER;
-    if (!targetNumber) {
-      console.warn('[WhatsApp Bot] No WHATSAPP_NOTIFY_NUMBER configured.');
-      return false;
-    }
-
-    let jid = targetNumber;
-    if (!jid.includes('@')) {
-      const clean = jid.replace(/\D/g, '');
-      const finalDigits = clean.length === 10 ? '91' + clean : clean;
-      jid = `${finalDigits}@s.whatsapp.net`;
-    }
-
-    await sock.sendMessage(jid, { text: message });
-    console.log(`[WhatsApp Bot] Sent notification to ${jid}`);
+    await sock.sendMessage(mainJid, { text: message });
+    console.log(`[WhatsApp Bot] Sent notification successfully to ${mainJid}`);
     return true;
   } catch (err) {
-    console.error('[WhatsApp Bot] Failed to send notification:', err);
+    console.error(`[WhatsApp Bot] Failed to send notification to ${mainJid}:`, err);
+
+    // Fallback attempt to WHATSAPP_NOTIFY_NUMBER if primary recipient failed
+    if (process.env.WHATSAPP_NOTIFY_NUMBER) {
+      const fallbackJid = formatJid(process.env.WHATSAPP_NOTIFY_NUMBER);
+      if (fallbackJid !== mainJid) {
+        try {
+          console.log(`[WhatsApp Bot] Retrying notification via admin fallback: ${fallbackJid}`);
+          await sock.sendMessage(fallbackJid, { text: `[Alert Notification]\n\n${message}` });
+          return true;
+        } catch (fallbackErr) {
+          console.error('[WhatsApp Bot] Fallback notification also failed:', fallbackErr);
+        }
+      }
+    }
     return false;
   }
 }
