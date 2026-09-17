@@ -26,6 +26,7 @@ export function getISTPunchTime(date: Date = new Date()): string {
     hourCycle: 'h23',
   });
 
+
   const parts = formatter.formatToParts(date);
   const get = (type: string) => parts.find((p) => p.type === type)?.value || '';
   let hourStr = get('hour');
