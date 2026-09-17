@@ -1,7 +1,8 @@
 import { getAllEmployees } from '@/lib/db/employees';
 import { executePunch, getISTPunchTime } from '@/lib/hrone/punch';
 import { refreshHROneToken } from '@/lib/hrone/token';
-import { resolveWhatsAppRecipient, sendWhatsAppNotification } from '@/whatsapp/bot';
+import { resolveWhatsAppRecipient } from '@/lib/whatsapp/recipient';
+import { sendWhatsAppNotification } from '@/whatsapp/bot';
 import { NextRequest, NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';

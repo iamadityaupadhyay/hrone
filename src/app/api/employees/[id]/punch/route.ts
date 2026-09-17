@@ -1,6 +1,7 @@
 import { getEmployeeById } from '@/lib/db/employees';
 import { executePunch } from '@/lib/hrone/punch';
-import { resolveWhatsAppRecipient, sendWhatsAppNotification } from '@/whatsapp/bot';
+import { resolveWhatsAppRecipient } from '@/lib/whatsapp/recipient';
+import { sendWhatsAppNotification } from '@/whatsapp/bot';
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function POST(
