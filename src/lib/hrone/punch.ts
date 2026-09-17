@@ -34,6 +34,26 @@ export function getISTPunchTime(date: Date = new Date()): string {
   return `${get('year')}-${get('month')}-${get('day')}T${hourStr}:${get('minute')}`;
 }
 
+/**
+ * Add realistic GPS micro-jitter (+/- ~10-15 meters) so every punch location varies slightly
+ */
+function getJitteredLocation(latStr?: string, lngStr?: string, accStr?: string) {
+  const baseLat = parseFloat(latStr || '28.5004327');
+  const baseLng = parseFloat(lngStr || '77.4150811');
+  const baseAcc = parseFloat(accStr || '12.126');
+
+  // Random offset up/down by +/- 0.00012 degrees (~12 meters)
+  const latJitter = (Math.random() - 0.5) * 0.00024;
+  const lngJitter = (Math.random() - 0.5) * 0.00024;
+  const accJitter = (Math.random() - 0.5) * 3.0; // +/- 1.5m accuracy variation
+
+  return {
+    latitude: (baseLat + latJitter).toFixed(7),
+    longitude: (baseLng + lngJitter).toFixed(7),
+    geoAccuracy: Math.max(5.0, baseAcc + accJitter).toFixed(3),
+  };
+}
+
 export async function executePunch(
   employee: EmployeeProfile,
   punchType: 'CHECK_IN' | 'CHECK_OUT',
@@ -60,14 +80,15 @@ export async function executePunch(
   const endpoint = 'https://app.hrone.cloud/api/timeoffice/mobile/checkin/Attendance/Request';
   const punchTime = customPunchTime || getISTPunchTime();
   const domain = employee.companyDomainCode || 'uharvest';
+  const jitteredGeo = getJitteredLocation(employee.latitude, employee.longitude, employee.geoAccuracy);
 
   const payload = {
     requestType: 'A',
     applyRequestSource: 10,
     employeeId: employee.employeeId,
-    latitude: employee.latitude || '28.5004327',
-    longitude: employee.longitude || '77.4150811',
-    geoAccuracy: employee.geoAccuracy || '12.126',
+    latitude: jitteredGeo.latitude,
+    longitude: jitteredGeo.longitude,
+    geoAccuracy: jitteredGeo.geoAccuracy,
     geoLocation:
       employee.geoLocation || '210-211, altF, Sector 142, Noida, Uttar Pradesh 201304, India',
     punchTime,

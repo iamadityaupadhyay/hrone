@@ -8,7 +8,7 @@ import { executePunch, getISTPunchTime } from '../lib/hrone/punch';
 import { refreshHROneToken } from '../lib/hrone/token';
 import { getDatabase } from '../lib/mongodb';
 import { EmployeeProfile } from '../lib/types/employee';
-import { getWhatsAppBotStatus, sendWhatsAppNotification, startWhatsAppBot } from '../whatsapp/bot';
+import { getWhatsAppBotStatus, resolveWhatsAppRecipient, sendWhatsAppNotification, startWhatsAppBot } from '../whatsapp/bot';
 
 /**
  * Generate a random integer between min and max inclusive
@@ -40,16 +40,17 @@ function generateRandomPunchTime(minTimeStr: string, maxTimeStr: string): string
 }
 
 /**
- * Check if current time (HH:mm) matches or just passed planned time (within 3 mins)
+ * Check if current time (HH:mm) matches or has passed planned time (within window)
  */
-function isTimeTriggerMatch(currentTimeStr: string, plannedTimeStr: string): boolean {
+function isTimeTriggerMatch(currentTimeStr: string, plannedTimeStr: string, maxWindowHours = 4): boolean {
   const [currH, currM] = currentTimeStr.split(':').map(Number);
   const [planH, planM] = plannedTimeStr.split(':').map(Number);
 
   const currTotal = currH * 60 + currM;
   const planTotal = planH * 60 + planM;
 
-  return currTotal >= planTotal && currTotal <= planTotal + 3;
+  // Allow trigger if current time is >= planned time and within max window (defaults to 4 hours)
+  return currTotal >= planTotal && currTotal <= planTotal + (maxWindowHours * 60);
 }
 
 async function runSchedulerTick() {
@@ -145,11 +146,7 @@ async function runSchedulerTick() {
         ? JSON.stringify(res.responsePayload, null, 2)
         : String(res.responsePayload || res.error || 'Done');
 
-      const recipient =
-        (emp as any).whatsappLid ||
-        (emp as any).whatsappJid ||
-        (emp.mobileNumber ? `${emp.mobileNumber}@s.whatsapp.net` : undefined) ||
-        (emp.username && /^\d{10}$/.test(emp.username) ? `91${emp.username}@s.whatsapp.net` : undefined);
+      const recipient = resolveWhatsAppRecipient(emp);
 
       if (recipient) {
         if (res.success) {
@@ -193,11 +190,7 @@ async function runSchedulerTick() {
         ? JSON.stringify(res.responsePayload, null, 2)
         : String(res.responsePayload || res.error || 'Done');
 
-      const recipient =
-        (emp as any).whatsappLid ||
-        (emp as any).whatsappJid ||
-        (emp.mobileNumber ? `${emp.mobileNumber}@s.whatsapp.net` : undefined) ||
-        (emp.username && /^\d{10}$/.test(emp.username) ? `91${emp.username}@s.whatsapp.net` : undefined);
+      const recipient = resolveWhatsAppRecipient(emp);
 
       if (recipient) {
         if (res.success) {

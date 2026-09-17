@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { upsertEmployee } from '@/lib/db/employees';
+import { syncEmployeeHolidays } from '@/lib/db/holidays';
 import { loginWithHROne } from '@/lib/hrone/auth';
 import { EmployeeProfile } from '@/lib/types/employee';
 
@@ -52,6 +53,11 @@ export async function POST(req: NextRequest) {
     };
 
     const id = await upsertEmployee(newProfile);
+
+    // Sync holiday calendar for this employee asynchronously
+    syncEmployeeHolidays({ ...newProfile, _id: id }).catch((err) =>
+      console.error(`[Auth Login] Failed background holiday sync for ${newProfile.name}:`, err)
+    );
 
     return NextResponse.json({
       success: true,

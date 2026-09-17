@@ -15,7 +15,13 @@ import { getAllEmployees } from '../lib/db/employees';
 import { loginWithHROne } from '../lib/hrone/auth';
 import { executePunch, getISTPunchTime } from '../lib/hrone/punch';
 import { refreshHROneToken } from '../lib/hrone/token';
+import {
+  fetchAttendanceCalendarDetails,
+  extractUnregularizedDays,
+  submitAttendanceRegularization,
+} from '../lib/hrone/regularization';
 import { getDatabase } from '../lib/mongodb';
+import { EmployeeProfile } from '../lib/types/employee';
 
 const AUTH_DIR = path.resolve(process.cwd(), '.whatsapp_auth');
 let sock: WASocket | null = null;
@@ -27,6 +33,13 @@ interface PendingLoginState {
 }
 const pendingLogins = new Map<string, PendingLoginState>();
 
+interface PendingRegularizationState {
+  employeeId: number;
+  dates: string[];
+  timestamp: number;
+}
+const pendingRegularizations = new Map<string, PendingRegularizationState>();
+
 export function getWhatsAppBotStatus() {
   return {
     connected: sock !== null && !!sock.user,
@@ -35,35 +48,94 @@ export function getWhatsAppBotStatus() {
   };
 }
 
+export { resolveWhatsAppRecipient } from '../lib/whatsapp/recipient';
+
 /**
- * Send a notification message via WhatsApp if bot is connected
+ * Send a notification message via WhatsApp if bot is connected, with admin fallback
  */
-export async function sendWhatsAppNotification(message: string, recipientJid?: string) {
+export async function sendWhatsAppNotification(message: string, recipientJid?: string): Promise<boolean> {
   if (!sock) {
-    console.warn('[WhatsApp Bot] Bot not connected. Notification skipped.');
+    console.warn('[WhatsApp Bot] Bot socket not connected. Notification skipped.');
     return false;
   }
 
+  const primaryTarget = recipientJid || process.env.WHATSAPP_NOTIFY_NUMBER;
+  if (!primaryTarget) {
+    console.warn('[WhatsApp Bot] No recipient JID or WHATSAPP_NOTIFY_NUMBER configured.');
+    return false;
+  }
+
+  const formatJid = (input: string) => {
+    if (input.includes('@')) return input;
+    const clean = input.replace(/\D/g, '');
+    const finalDigits = clean.length === 10 ? '91' + clean : clean;
+    return `${finalDigits}@s.whatsapp.net`;
+  };
+
+  const mainJid = formatJid(primaryTarget);
+
   try {
-    const targetNumber = recipientJid || process.env.WHATSAPP_NOTIFY_NUMBER;
-    if (!targetNumber) {
-      console.warn('[WhatsApp Bot] No WHATSAPP_NOTIFY_NUMBER configured.');
-      return false;
-    }
-
-    let jid = targetNumber;
-    if (!jid.includes('@')) {
-      const clean = jid.replace(/\D/g, '');
-      const finalDigits = clean.length === 10 ? '91' + clean : clean;
-      jid = `${finalDigits}@s.whatsapp.net`;
-    }
-
-    await sock.sendMessage(jid, { text: message });
-    console.log(`[WhatsApp Bot] Sent notification to ${jid}`);
+    await sock.sendMessage(mainJid, { text: message });
+    console.log(`[WhatsApp Bot] Sent notification successfully to ${mainJid}`);
     return true;
   } catch (err) {
-    console.error('[WhatsApp Bot] Failed to send notification:', err);
+    console.error(`[WhatsApp Bot] Failed to send notification to ${mainJid}:`, err);
+
+    // Fallback attempt to WHATSAPP_NOTIFY_NUMBER if primary recipient failed
+    if (process.env.WHATSAPP_NOTIFY_NUMBER) {
+      const fallbackJid = formatJid(process.env.WHATSAPP_NOTIFY_NUMBER);
+      if (fallbackJid !== mainJid) {
+        try {
+          console.log(`[WhatsApp Bot] Retrying notification via admin fallback: ${fallbackJid}`);
+          await sock.sendMessage(fallbackJid, { text: `[Alert Notification]\n\n${message}` });
+          return true;
+        } catch (fallbackErr) {
+          console.error('[WhatsApp Bot] Fallback notification also failed:', fallbackErr);
+        }
+      }
+    }
     return false;
+  }
+}
+
+/**
+ * Send interactive buttons with fallback to formatted quick-action text options
+ */
+export async function sendWhatsAppButtons(
+  fromJid: string,
+  text: string,
+  buttons: Array<{ id: string; text: string }>,
+  footer: string = 'HROne Personal Assistant'
+): Promise<boolean> {
+  if (!sock) return false;
+
+  try {
+    // 1. Attempt native Baileys interactive buttons
+    const buttonPayload = {
+      text,
+      footer,
+      buttons: buttons.map((b) => ({
+        buttonId: b.id,
+        buttonText: { displayText: b.text },
+        type: 1,
+      })),
+      headerType: 1,
+    };
+
+    await sock.sendMessage(fromJid, buttonPayload as any);
+    return true;
+  } catch (err) {
+    console.warn('[WhatsApp Bot] Native buttons failed/unsupported, using formatted fallback:', err);
+
+    // 2. High-reliability formatted fallback menu (works 100% on all WhatsApp clients)
+    let fallbackMsg = `${text}\n\n`;
+    buttons.forEach((b) => {
+      fallbackMsg += `👉 Reply *${b.id}* for *${b.text}*\n`;
+    });
+    if (footer) fallbackMsg += `\n_${footer}_`;
+
+    await sock.sendMessage(fromJid, { text: fallbackMsg });
+    return true;
   }
 }
 
@@ -302,7 +374,7 @@ async function handleCommand(from: string, commandText: string, senderName: stri
     if (!username || !password) {
       pendingLogins.set(from, { step: 'AWAITING_USERNAME', timestamp: Date.now() });
       await sock.sendMessage(from, {
-        text: `🔐 Please reply with your *HROne Username or Employee Code*:`,
+        text: `🔐 Please reply with your *HROne Employee Code or Username or mobile*:`,
       });
       return;
     }
@@ -374,9 +446,8 @@ async function handleCommand(from: string, commandText: string, senderName: stri
       text:
         `🎉 *Login Successful!*\n\n` +
         `Welcome *${loginRes.name}* (ID: ${loginRes.employeeId})!\n\n` +
-        `✅ Linked to this WhatsApp chat\n` +
-        `✅ Authenticated with HROne Cloud\n` +
-        `✅ Check-in and Check-out will be done automatically  \n` +
+        `✅ Linked to your HROne account\n` +
+        `✅ Your attendance will be marked automatically from now on  \n` +
         `✅ Focus on your work, we will take care of attendance!\n\n` +
         `Send *status* to see your dashboard, or *in* / *out* to punch attendance!`,
     });
@@ -396,6 +467,38 @@ async function handleCommand(from: string, commandText: string, senderName: stri
     }
   }
 
+  // Pending Regularization Confirmation State
+  const pendingReg = pendingRegularizations.get(from);
+  if (pendingReg && matchedEmp) {
+    if (cmd === 'yes' || cmd === 'y' || cmd === 'confirm' || cmd === 'regularize confirm' || cmd === '1') {
+      pendingRegularizations.delete(from);
+      await sock.sendMessage(from, {
+        text: `⏳ Submitting Attendance Regularization request for *${pendingReg.dates.length} date(s)*...`,
+      });
+
+      const submitRes = await submitAttendanceRegularization(matchedEmp, pendingReg.dates, 'Tech Issue');
+      if (submitRes.success) {
+        await sock.sendMessage(from, {
+          text:
+            `🎉 *Attendance Regularization Submitted Successfully!*\n\n` +
+            `👤 *${matchedEmp.name}* (ID: ${matchedEmp.employeeId})\n` +
+            `📅 Dates: *${pendingReg.dates.join(', ')}*\n` +
+            `📝 Remarks: Tech Issue\n\n` +
+            `✅ Regularization request sent to HROne Cloud for manager approval!`,
+        });
+      } else {
+        await sock.sendMessage(from, {
+          text: `❌ *Regularization Submission Failed:*\n\n${submitRes.error || 'Unknown error from HROne Cloud'}`,
+        });
+      }
+      return;
+    } else if (cmd === 'no' || cmd === 'n' || cmd === 'cancel' || cmd === 'abort') {
+      pendingRegularizations.delete(from);
+      await sock.sendMessage(from, { text: `❌ Regularization request cancelled.` });
+      return;
+    }
+  }
+
   // 3. HELP / MENU
   if (cmd === 'help' || cmd === 'menu' || cmd === 'commands' || cmd === 'cmd' || cmd === 'hi' || cmd === 'hello') {
     const userLine = matchedEmp
@@ -408,6 +511,7 @@ async function handleCommand(from: string, commandText: string, senderName: stri
       `• *status* - View your attendance card, scheduled times & session health\n` +
       `• *in* (or *checkin*) - Mark Check-In immediately on HROne Cloud\n` +
       `• *out* (or *checkout*) - Mark Check-Out immediately on HROne Cloud\n` +
+      `• *regularize* (or *ar*, *absent*) - View absent days & submit regularization request\n` +
       `• *pause* (or *stop*, *leave*) - Turn OFF auto-attendance for today/leave\n` +
       `• *resume* (or *start*, *unpause*) - Turn ON auto-attendance\n` +
       `• *logs* - View recent punches with official HROne reference codes\n` +
@@ -427,10 +531,9 @@ async function handleCommand(from: string, commandText: string, senderName: stri
     await sock.sendMessage(from, {
       text:
         `👋 *Hello ${senderName}!* (HROne Personal Bot)\n\n` +
-        `🔒 *You are not logged in yet.*\n\n` +
-        `Please enter your *HROne Username or Employee Code* to log in:\n` +
-        `👉 (Example: *E1885* or *9871251984*)\n\n` +
-        `_Or if you are already enrolled, reply: link <Your Employee ID>_`,
+        `🔒 *Uh! I searched HRONE DB and couldnt find your details*\n\n` +
+        `Please enter your *HROne Employee Code or Registered Phone Number*:\n` +
+        `👉 (Example: *E1885* or *9871251984*)\n\n`,
     });
     return;
   }
@@ -644,6 +747,66 @@ async function handleCommand(from: string, commandText: string, senderName: stri
     }
 
     await sock.sendMessage(from, { text: replyMsg });
+    return;
+  }
+
+  // 11. REGULARIZE ATTENDANCE COMMAND: Query calendar & offer interactive submission
+  if (
+    cmd === 'regularize' ||
+    cmd === 'regularise' ||
+    cmd === 'ar' ||
+    cmd === 'absent' ||
+    cmd === 'missing punch' ||
+    cmd === 'regularization'
+  ) {
+    await sock.sendMessage(from, {
+      text: `⏳ Fetching attendance calendar & checking unregularized days for *${matchedEmp.name}*...`,
+    });
+
+    const now = new Date();
+    const istDateStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(now);
+    const [currY, currM] = istDateStr.split('-').map(Number);
+
+    const calendarRes = await fetchAttendanceCalendarDetails(matchedEmp, currY, currM);
+
+    if (!calendarRes.success) {
+      await sock.sendMessage(from, {
+        text: `❌ *Failed to fetch attendance calendar:*\n\n${calendarRes.error}`,
+      });
+      return;
+    }
+
+    const unregDays = extractUnregularizedDays(calendarRes.data);
+
+    if (unregDays.length === 0) {
+      await sock.sendMessage(from, {
+        text: `✅ *No Absent or Missed Punch Days Found for This Month!*\n\nYour attendance calendar is fully up to date for this month for *${matchedEmp.name}*.`,
+      });
+      return;
+    }
+
+    const datesList = unregDays.map((d) => d.date);
+    pendingRegularizations.set(from, {
+      employeeId: matchedEmp.employeeId,
+      dates: datesList,
+      timestamp: Date.now(),
+    });
+
+    let msg = `📅 *Absent / Missed Punch Days Found for ${matchedEmp.name} (Current Month):*\n\n`;
+    for (const d of unregDays) {
+      msg += `• *${d.date}* (${d.status})\n`;
+    }
+    msg += `\nWould you like to submit Attendance Regularization (AR) for these dates?`;
+
+    await sendWhatsAppButtons(
+      from,
+      msg,
+      [
+        { id: 'yes', text: 'Apply Regularize' },
+        { id: 'cancel', text: 'Cancel' },
+      ],
+      'HROne Regularization Assistant'
+    );
     return;
   }
 
