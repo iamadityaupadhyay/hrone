@@ -192,27 +192,16 @@ async function runSchedulerTick() {
 
       const recipient = resolveWhatsAppRecipient(emp);
 
-      if (recipient) {
-        if (res.success) {
-          await sendWhatsAppNotification(
-            `🔴 *Good evening ${emp.name}!*\n\n` +
-            `Your HROne Check-Out has been marked automatically.\n` +
-            `⏰ Time: *${currentIstTime} IST*\n` +
-            `📍 Location: ${emp.geoLocation || 'Office'}\n\n` +
-            `*HROne API Response:*\n` +
-            `\`\`\`json\n${apiResponseStr}\n\`\`\``,
-            recipient
-          );
-        } else {
-          await sendWhatsAppNotification(
-            `⚠️ *Attendance Alert for ${emp.name}*\n\n` +
-            `Automated Check-Out attempt at *${currentIstTime} IST* failed.\n\n` +
-            `*HROne API Response:*\n` +
-            `\`\`\`json\n${apiResponseStr}\n\`\`\`\n\n` +
-            `Reply *out* to retry punching manually, or *status* to view your card.`,
-            recipient
-          );
-        }
+      if (recipient && res.success) {
+        await sendWhatsAppNotification(
+          `🔴 *Good evening ${emp.name}!*\n\n` +
+          `Your HROne Check-Out has been marked automatically.\n` +
+          `⏰ Time: *${currentIstTime} IST*\n` +
+          `📍 Location: ${emp.geoLocation || 'Office'}\n\n` +
+          `*HROne API Response:*\n` +
+          `\`\`\`json\n${apiResponseStr}\n\`\`\``,
+          recipient
+        );
       }
     }
   }

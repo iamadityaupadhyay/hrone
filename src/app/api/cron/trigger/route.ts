@@ -168,11 +168,11 @@ async function handleCronTrigger(req: NextRequest) {
               `📍 Location: ${emp.geoLocation || 'Office'}`,
               recipient
             );
-          } else {
+          } else if (isCheckIn) {
             await sendWhatsAppNotification(
               `⚠️ *Attendance Alert for ${emp.name}*\n\n` +
-              `Automated ${actionName} attempt at *${currentIstHHMM} IST* failed: ${punchResult.error || 'Unknown error'}\n\n` +
-              `Reply *${isCheckIn ? 'in' : 'out'}* to retry punching manually.`,
+              `Automated Check-In attempt at *${currentIstHHMM} IST* failed: ${punchResult.error || 'Unknown error'}\n\n` +
+              `Reply *in* to retry punching manually.`,
               recipient
             );
           }
