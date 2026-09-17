@@ -270,7 +270,7 @@ export default function AttendanceDashboard() {
     }
 
     setSavingPasswordId(employee.employeeId);
-    setPasswordSaveStatus((prev) => ({ ...prev, [employee.employeeId]: 'Saving & verifying...' }));
+    setPasswordSaveStatus((prev) => ({ ...prev, [employee.employeeId]: 'Saving...' }));
 
     try {
       const res = await fetch(`/api/employees/${employee.employeeId}`, {
@@ -284,22 +284,7 @@ export default function AttendanceDashboard() {
         return;
       }
 
-      // Verify login using password
-      const reauthRes = await fetch(`/api/employees/${employee.employeeId}/refresh`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ forcePassword: true }),
-      });
-      const reauthData = await reauthRes.json();
-
-      if (reauthData.success) {
-        setPasswordSaveStatus((prev) => ({ ...prev, [employee.employeeId]: '✅ Password saved & verified!' }));
-      } else {
-        setPasswordSaveStatus((prev) => ({
-          ...prev,
-          [employee.employeeId]: `⚠️ Saved, but login warning: ${reauthData.error || 'Check credentials'}`,
-        }));
-      }
+      setPasswordSaveStatus((prev) => ({ ...prev, [employee.employeeId]: '✅ Password saved!' }));
       fetchData();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to save';
@@ -1259,12 +1244,12 @@ export default function AttendanceDashboard() {
                           {isSaving ? (
                             <>
                               <RotateCw className="w-3.5 h-3.5 animate-spin" />
-                              <span>Testing...</span>
+                              <span>Saving...</span>
                             </>
                           ) : (
                             <>
                               <Save className="w-3.5 h-3.5" />
-                              <span>Save & Test</span>
+                              <span>Save</span>
                             </>
                           )}
                         </button>
