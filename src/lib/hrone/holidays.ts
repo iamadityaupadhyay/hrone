@@ -101,11 +101,16 @@ export async function fetchHROneHolidays(
       
       let dateStr = '';
       if (rawDate) {
-        const d = new Date(rawDate);
-        if (!isNaN(d.getTime())) {
-          dateStr = d.toISOString().split('T')[0];
-        } else if (/^\d{4}-\d{2}-\d{2}/.test(rawDate)) {
+        if (/^\d{4}-\d{2}-\d{2}/.test(rawDate)) {
           dateStr = rawDate.slice(0, 10);
+        } else {
+          const d = new Date(rawDate);
+          if (!isNaN(d.getTime())) {
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            dateStr = `${y}-${m}-${day}`;
+          }
         }
       }
 

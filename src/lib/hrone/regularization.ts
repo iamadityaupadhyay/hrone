@@ -158,11 +158,16 @@ export function extractUnregularizedDays(calendarData: unknown): UnregularizedDa
     if (!dateRaw) continue;
 
     let dateStr = '';
-    const parsedDate = new Date(dateRaw);
-    if (!isNaN(parsedDate.getTime())) {
-      dateStr = parsedDate.toISOString().split('T')[0];
-    } else if (/^\d{4}-\d{2}-\d{2}/.test(dateRaw)) {
+    if (/^\d{4}-\d{2}-\d{2}/.test(dateRaw)) {
       dateStr = dateRaw.slice(0, 10);
+    } else {
+      const parsedDate = new Date(dateRaw);
+      if (!isNaN(parsedDate.getTime())) {
+        const y = parsedDate.getFullYear();
+        const m = String(parsedDate.getMonth() + 1).padStart(2, '0');
+        const d = String(parsedDate.getDate()).padStart(2, '0');
+        dateStr = `${y}-${m}-${d}`;
+      }
     }
 
     if (!dateStr || dateStr > todayStr) continue; // Skip unperformed future dates
