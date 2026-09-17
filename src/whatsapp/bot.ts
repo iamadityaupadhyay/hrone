@@ -767,39 +767,33 @@ async function handleCommand(from: string, commandText: string, senderName: stri
     const istDateStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(now);
     const [currY, currM] = istDateStr.split('-').map(Number);
 
-    let prevY = currY;
-    let prevM = currM - 1;
-    if (prevM < 1) {
-      prevM = 12;
-      prevY = currY - 1;
-    }
+    const calendarRes = await fetchAttendanceCalendarDetails(matchedEmp, currY, currM);
 
-    const [currRes, prevRes] = await Promise.all([
-      fetchAttendanceCalendarDetails(matchedEmp, currY, currM),
-      fetchAttendanceCalendarDetails(matchedEmp, prevY, prevM),
-    ]);
-
-    const currUnreg = currRes.success ? extractUnregularizedDays(currRes.data) : [];
-    const prevUnreg = prevRes.success ? extractUnregularizedDays(prevRes.data) : [];
-
-    const allUnreg = [...prevUnreg, ...currUnreg].sort((a, b) => a.date.localeCompare(b.date));
-
-    if (allUnreg.length === 0) {
+    if (!calendarRes.success) {
       await sock.sendMessage(from, {
-        text: `✅ *No Absent or Missed Punch Days Found!*\n\nYour attendance calendar is fully up to date for *${matchedEmp.name}*.`,
+        text: `❌ *Failed to fetch attendance calendar:*\n\n${calendarRes.error}`,
       });
       return;
     }
 
-    const datesList = allUnreg.map((d) => d.date);
+    const unregDays = extractUnregularizedDays(calendarRes.data);
+
+    if (unregDays.length === 0) {
+      await sock.sendMessage(from, {
+        text: `✅ *No Absent or Missed Punch Days Found for This Month!*\n\nYour attendance calendar is fully up to date for this month for *${matchedEmp.name}*.`,
+      });
+      return;
+    }
+
+    const datesList = unregDays.map((d) => d.date);
     pendingRegularizations.set(from, {
       employeeId: matchedEmp.employeeId,
       dates: datesList,
       timestamp: Date.now(),
     });
 
-    let msg = `📅 *Absent / Missed Punch Days Found for ${matchedEmp.name}:*\n\n`;
-    for (const d of allUnreg) {
+    let msg = `📅 *Absent / Missed Punch Days Found for ${matchedEmp.name} (Current Month):*\n\n`;
+    for (const d of unregDays) {
       msg += `• *${d.date}* (${d.status})\n`;
     }
     msg += `\nWould you like to submit Attendance Regularization (AR) for these dates?`;
