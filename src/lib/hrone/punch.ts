@@ -23,12 +23,15 @@ export function getISTPunchTime(date: Date = new Date()): string {
     day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
-    hour12: false,
+    hourCycle: 'h23',
   });
 
   const parts = formatter.formatToParts(date);
   const get = (type: string) => parts.find((p) => p.type === type)?.value || '';
-  return `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}`;
+  let hourStr = get('hour');
+  if (hourStr === '24') hourStr = '00';
+
+  return `${get('year')}-${get('month')}-${get('day')}T${hourStr}:${get('minute')}`;
 }
 
 export async function executePunch(
