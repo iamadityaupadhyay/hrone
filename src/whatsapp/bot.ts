@@ -321,7 +321,7 @@ async function handleCommand(from: string, commandText: string, senderName: stri
     if (!username || !password) {
       pendingLogins.set(from, { step: 'AWAITING_USERNAME', timestamp: Date.now() });
       await sock.sendMessage(from, {
-        text: `🔐 Please reply with your *HROne Username or Employee Code*:`,
+        text: `🔐 Please reply with your *HROne Employee Code or Username or mobile*:`,
       });
       return;
     }
@@ -393,9 +393,8 @@ async function handleCommand(from: string, commandText: string, senderName: stri
       text:
         `🎉 *Login Successful!*\n\n` +
         `Welcome *${loginRes.name}* (ID: ${loginRes.employeeId})!\n\n` +
-        `✅ Linked to this WhatsApp chat\n` +
-        `✅ Authenticated with HROne Cloud\n` +
-        `✅ Check-in and Check-out will be done automatically  \n` +
+        `✅ Linked to your HROne account\n` +
+        `✅ Your attendance will be marked automatically from now on  \n` +
         `✅ Focus on your work, we will take care of attendance!\n\n` +
         `Send *status* to see your dashboard, or *in* / *out* to punch attendance!`,
     });
@@ -446,10 +445,9 @@ async function handleCommand(from: string, commandText: string, senderName: stri
     await sock.sendMessage(from, {
       text:
         `👋 *Hello ${senderName}!* (HROne Personal Bot)\n\n` +
-        `🔒 *You are not logged in yet.*\n\n` +
-        `Please enter your *HROne Username or Employee Code* to log in:\n` +
-        `👉 (Example: *E1885* or *9871251984*)\n\n` +
-        `_Or if you are already enrolled, reply: link <Your Employee ID>_`,
+        `🔒 *Uh! I searched HRONE DB and couldnt find your details*\n\n` +
+        `Please enter your *HROne Employee Code or Registered Phone Number*:\n` +
+        `👉 (Example: *E1885* or *9871251984*)\n\n`,
     });
     return;
   }
