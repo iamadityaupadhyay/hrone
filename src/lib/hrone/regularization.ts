@@ -148,6 +148,7 @@ export function extractUnregularizedDays(calendarData: unknown): UnregularizedDa
     : [];
 
   const unregularized: UnregularizedDay[] = [];
+  const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
 
   for (const item of rawList) {
     if (!item || typeof item !== 'object') continue;
@@ -164,30 +165,45 @@ export function extractUnregularizedDays(calendarData: unknown): UnregularizedDa
       dateStr = dateRaw.slice(0, 10);
     }
 
-    if (!dateStr) continue;
+    if (!dateStr || dateStr > todayStr) continue; // Skip unperformed future dates
 
-    // Check status codes & flags
+    // HROne explicit fields
+    const fh = String(rec.updatedFirstHalfStatus || '').toUpperCase();
+    const sh = String(rec.updatedSecondHalfStatus || '').toUpperCase();
+    const fhColor = String(rec.firstHalfStatusColor || '').toUpperCase();
+    const shColor = String(rec.secondHalfStatusColor || '').toUpperCase();
+    const isLeave = Boolean(rec.isLeave);
+
+    // HROne red status color for absent is #F27C7C
+    const isFhAbsent = fh === 'A' || fhColor === '#F27C7C';
+    const isShAbsent = sh === 'A' || shColor === '#F27C7C';
+
+    // Fallback checks for status string
     const status = String(rec.status || rec.attendanceStatus || rec.statusCode || rec.statusName || '').toUpperCase();
-    const isAbsent = Boolean(rec.isAbsent || status === 'A' || status === 'ABSENT');
+    const isGeneralAbsent = Boolean(rec.isAbsent || status === 'A' || status === 'ABSENT');
     const isMissingIn = Boolean(rec.isInPunchMissing || status.includes('MISSING_IN') || status.includes('IN_MISSING'));
     const isMissingOut = Boolean(rec.isOutPunchMissing || status.includes('MISSING_OUT') || status.includes('OUT_MISSING'));
-    const isMissed = Boolean(rec.isMissedPunch || status.includes('MISSED'));
-    
-    // Ignore Holidays (H), Weekly Offs (WO), Approved Leaves (L), Present (P)
-    const isHolidayOrOff = status === 'H' || status === 'HOLIDAY' || status === 'WO' || status === 'WEEKLY_OFF' || status === 'OFF';
-    const isPresent = status === 'P' || status === 'PRESENT';
+
+    // Skip Weekly Offs (WO), Holidays (HO/H), Approved Leaves
+    const isHolidayOrOff = fh === 'WO' || sh === 'WO' || fh === 'HO' || sh === 'HO' || status === 'H' || status === 'WO' || isLeave;
     const isAlreadyRegularized = Boolean(rec.isRegularized || rec.attendanceRegularizationStatus === 'APPROVED' || rec.attendanceRegularizationStatus === 'PENDING');
 
-    if ((isAbsent || isMissingIn || isMissingOut || isMissed) && !isHolidayOrOff && !isPresent && !isAlreadyRegularized) {
-      let label = 'Absent';
-      if (isMissingIn || isMissingOut || isMissed) {
+    if ((isFhAbsent || isShAbsent || isGeneralAbsent || isMissingIn || isMissingOut) && !isHolidayOrOff && !isAlreadyRegularized) {
+      let label = 'Absent (Full Day)';
+      if (isFhAbsent && isShAbsent) {
+        label = 'Absent (Full Day)';
+      } else if (isFhAbsent) {
+        label = 'Absent (1st Half)';
+      } else if (isShAbsent) {
+        label = 'Absent (2nd Half)';
+      } else if (isMissingIn || isMissingOut) {
         label = 'Missed Punch';
       }
 
       unregularized.push({
         date: dateStr,
         status: label,
-        rawStatus: status,
+        rawStatus: `1st Half: ${fh}, 2nd Half: ${sh}`,
       });
     }
   }

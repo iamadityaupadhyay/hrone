@@ -763,25 +763,35 @@ async function handleCommand(from: string, commandText: string, senderName: stri
       text: `⏳ Fetching attendance calendar & checking unregularized days for *${matchedEmp.name}*...`,
     });
 
-    const calendarRes = await fetchAttendanceCalendarDetails(matchedEmp);
+    const now = new Date();
+    const istDateStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(now);
+    const [currY, currM] = istDateStr.split('-').map(Number);
 
-    if (!calendarRes.success) {
+    let prevY = currY;
+    let prevM = currM - 1;
+    if (prevM < 1) {
+      prevM = 12;
+      prevY = currY - 1;
+    }
+
+    const [currRes, prevRes] = await Promise.all([
+      fetchAttendanceCalendarDetails(matchedEmp, currY, currM),
+      fetchAttendanceCalendarDetails(matchedEmp, prevY, prevM),
+    ]);
+
+    const currUnreg = currRes.success ? extractUnregularizedDays(currRes.data) : [];
+    const prevUnreg = prevRes.success ? extractUnregularizedDays(prevRes.data) : [];
+
+    const allUnreg = [...prevUnreg, ...currUnreg].sort((a, b) => a.date.localeCompare(b.date));
+
+    if (allUnreg.length === 0) {
       await sock.sendMessage(from, {
-        text: `❌ *Failed to fetch attendance calendar:*\n\n${calendarRes.error}`,
+        text: `✅ *No Absent or Missed Punch Days Found!*\n\nYour attendance calendar is fully up to date for *${matchedEmp.name}*.`,
       });
       return;
     }
 
-    const unregDays = extractUnregularizedDays(calendarRes.data);
-
-    if (unregDays.length === 0) {
-      await sock.sendMessage(from, {
-        text: `✅ *No Absent or Missed Punch Days Found!*\n\nYour attendance calendar is fully up to date for this month for *${matchedEmp.name}*.`,
-      });
-      return;
-    }
-
-    const datesList = unregDays.map((d) => d.date);
+    const datesList = allUnreg.map((d) => d.date);
     pendingRegularizations.set(from, {
       employeeId: matchedEmp.employeeId,
       dates: datesList,
@@ -789,7 +799,7 @@ async function handleCommand(from: string, commandText: string, senderName: stri
     });
 
     let msg = `📅 *Absent / Missed Punch Days Found for ${matchedEmp.name}:*\n\n`;
-    for (const d of unregDays) {
+    for (const d of allUnreg) {
       msg += `• *${d.date}* (${d.status})\n`;
     }
     msg += `\nWould you like to submit Attendance Regularization (AR) for these dates?`;
