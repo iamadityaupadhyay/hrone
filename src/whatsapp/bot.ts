@@ -15,6 +15,11 @@ import { getAllEmployees } from '../lib/db/employees';
 import { loginWithHROne } from '../lib/hrone/auth';
 import { executePunch, getISTPunchTime } from '../lib/hrone/punch';
 import { refreshHROneToken } from '../lib/hrone/token';
+import {
+  fetchAttendanceCalendarDetails,
+  extractUnregularizedDays,
+  submitAttendanceRegularization,
+} from '../lib/hrone/regularization';
 import { getDatabase } from '../lib/mongodb';
 import { EmployeeProfile } from '../lib/types/employee';
 
@@ -27,6 +32,13 @@ interface PendingLoginState {
   timestamp: number;
 }
 const pendingLogins = new Map<string, PendingLoginState>();
+
+interface PendingRegularizationState {
+  employeeId: number;
+  dates: string[];
+  timestamp: number;
+}
+const pendingRegularizations = new Map<string, PendingRegularizationState>();
 
 export function getWhatsAppBotStatus() {
   return {
@@ -83,6 +95,47 @@ export async function sendWhatsAppNotification(message: string, recipientJid?: s
       }
     }
     return false;
+  }
+}
+
+/**
+ * Send interactive buttons with fallback to formatted quick-action text options
+ */
+export async function sendWhatsAppButtons(
+  fromJid: string,
+  text: string,
+  buttons: Array<{ id: string; text: string }>,
+  footer: string = 'HROne Personal Assistant'
+): Promise<boolean> {
+  if (!sock) return false;
+
+  try {
+    // 1. Attempt native Baileys interactive buttons
+    const buttonPayload = {
+      text,
+      footer,
+      buttons: buttons.map((b) => ({
+        buttonId: b.id,
+        buttonText: { displayText: b.text },
+        type: 1,
+      })),
+      headerType: 1,
+    };
+
+    await sock.sendMessage(fromJid, buttonPayload as any);
+    return true;
+  } catch (err) {
+    console.warn('[WhatsApp Bot] Native buttons failed/unsupported, using formatted fallback:', err);
+
+    // 2. High-reliability formatted fallback menu (works 100% on all WhatsApp clients)
+    let fallbackMsg = `${text}\n\n`;
+    buttons.forEach((b) => {
+      fallbackMsg += `👉 Reply *${b.id}* for *${b.text}*\n`;
+    });
+    if (footer) fallbackMsg += `\n_${footer}_`;
+
+    await sock.sendMessage(fromJid, { text: fallbackMsg });
+    return true;
   }
 }
 
@@ -414,6 +467,38 @@ async function handleCommand(from: string, commandText: string, senderName: stri
     }
   }
 
+  // Pending Regularization Confirmation State
+  const pendingReg = pendingRegularizations.get(from);
+  if (pendingReg && matchedEmp) {
+    if (cmd === 'yes' || cmd === 'y' || cmd === 'confirm' || cmd === 'regularize confirm' || cmd === '1') {
+      pendingRegularizations.delete(from);
+      await sock.sendMessage(from, {
+        text: `⏳ Submitting Attendance Regularization request for *${pendingReg.dates.length} date(s)*...`,
+      });
+
+      const submitRes = await submitAttendanceRegularization(matchedEmp, pendingReg.dates, 'Tech Issue');
+      if (submitRes.success) {
+        await sock.sendMessage(from, {
+          text:
+            `🎉 *Attendance Regularization Submitted Successfully!*\n\n` +
+            `👤 *${matchedEmp.name}* (ID: ${matchedEmp.employeeId})\n` +
+            `📅 Dates: *${pendingReg.dates.join(', ')}*\n` +
+            `📝 Remarks: Tech Issue\n\n` +
+            `✅ Regularization request sent to HROne Cloud for manager approval!`,
+        });
+      } else {
+        await sock.sendMessage(from, {
+          text: `❌ *Regularization Submission Failed:*\n\n${submitRes.error || 'Unknown error from HROne Cloud'}`,
+        });
+      }
+      return;
+    } else if (cmd === 'no' || cmd === 'n' || cmd === 'cancel' || cmd === 'abort') {
+      pendingRegularizations.delete(from);
+      await sock.sendMessage(from, { text: `❌ Regularization request cancelled.` });
+      return;
+    }
+  }
+
   // 3. HELP / MENU
   if (cmd === 'help' || cmd === 'menu' || cmd === 'commands' || cmd === 'cmd' || cmd === 'hi' || cmd === 'hello') {
     const userLine = matchedEmp
@@ -426,6 +511,7 @@ async function handleCommand(from: string, commandText: string, senderName: stri
       `• *status* - View your attendance card, scheduled times & session health\n` +
       `• *in* (or *checkin*) - Mark Check-In immediately on HROne Cloud\n` +
       `• *out* (or *checkout*) - Mark Check-Out immediately on HROne Cloud\n` +
+      `• *regularize* (or *ar*, *absent*) - View absent days & submit regularization request\n` +
       `• *pause* (or *stop*, *leave*) - Turn OFF auto-attendance for today/leave\n` +
       `• *resume* (or *start*, *unpause*) - Turn ON auto-attendance\n` +
       `• *logs* - View recent punches with official HROne reference codes\n` +
@@ -661,6 +747,62 @@ async function handleCommand(from: string, commandText: string, senderName: stri
     }
 
     await sock.sendMessage(from, { text: replyMsg });
+    return;
+  }
+
+  // 11. REGULARIZE ATTENDANCE COMMAND: Query calendar & offer interactive submission
+  if (
+    cmd === 'regularize' ||
+    cmd === 'regularise' ||
+    cmd === 'ar' ||
+    cmd === 'absent' ||
+    cmd === 'missing punch' ||
+    cmd === 'regularization'
+  ) {
+    await sock.sendMessage(from, {
+      text: `⏳ Fetching attendance calendar & checking unregularized days for *${matchedEmp.name}*...`,
+    });
+
+    const calendarRes = await fetchAttendanceCalendarDetails(matchedEmp);
+
+    if (!calendarRes.success) {
+      await sock.sendMessage(from, {
+        text: `❌ *Failed to fetch attendance calendar:*\n\n${calendarRes.error}`,
+      });
+      return;
+    }
+
+    const unregDays = extractUnregularizedDays(calendarRes.data);
+
+    if (unregDays.length === 0) {
+      await sock.sendMessage(from, {
+        text: `✅ *No Absent or Missed Punch Days Found!*\n\nYour attendance calendar is fully up to date for this month for *${matchedEmp.name}*.`,
+      });
+      return;
+    }
+
+    const datesList = unregDays.map((d) => d.date);
+    pendingRegularizations.set(from, {
+      employeeId: matchedEmp.employeeId,
+      dates: datesList,
+      timestamp: Date.now(),
+    });
+
+    let msg = `📅 *Absent / Missed Punch Days Found for ${matchedEmp.name}:*\n\n`;
+    for (const d of unregDays) {
+      msg += `• *${d.date}* (${d.status})\n`;
+    }
+    msg += `\nWould you like to submit Attendance Regularization (AR) for these dates?`;
+
+    await sendWhatsAppButtons(
+      from,
+      msg,
+      [
+        { id: 'yes', text: 'Apply Regularize' },
+        { id: 'cancel', text: 'Cancel' },
+      ],
+      'HROne Regularization Assistant'
+    );
     return;
   }
 

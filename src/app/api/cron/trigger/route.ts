@@ -1,4 +1,5 @@
 import { getAllEmployees } from '@/lib/db/employees';
+import { isHolidayToday } from '@/lib/db/holidays';
 import { executePunch, getISTPunchTime } from '@/lib/hrone/punch';
 import { refreshHROneToken } from '@/lib/hrone/token';
 import { resolveWhatsAppRecipient } from '@/lib/whatsapp/recipient';
@@ -57,6 +58,20 @@ async function handleCronTrigger(req: NextRequest) {
           reason: `Skipped: Not a scheduled working day (day of week: ${dayOfWeek})`,
         });
         continue;
+      }
+
+      // 1b. Check official holiday calendar unless force=true
+      if (!force) {
+        const holidayCheck = await isHolidayToday(emp.employeeId, todayDateStr);
+        if (holidayCheck.isHoliday) {
+          results.push({
+            employeeId: emp.employeeId,
+            name: emp.name,
+            skipped: true,
+            reason: `Skipped: Today (${todayDateStr}) is an official holiday (${holidayCheck.holidayName})`,
+          });
+          continue;
+        }
       }
 
       // 2. Determine punch action
