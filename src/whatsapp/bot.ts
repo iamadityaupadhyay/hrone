@@ -579,20 +579,12 @@ async function handleCommand(from: string, commandText: string, senderName: stri
       outStr = `⏳ ${matchedEmp.todayPunch.plannedCheckOut}`;
     }
 
-    const autoStr = matchedEmp.schedule.active && matchedEmp.status === 'ACTIVE' ? '🟢 Active' : '⏸️ Paused';
-
-    let daysLeftStr = '';
-    if (matchedEmp.refreshTokenExpiry) {
-      const days = Math.ceil(
-        (new Date(matchedEmp.refreshTokenExpiry).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
-      );
-      daysLeftStr = days > 0 ? `• Session: 🟢 ${days}d left\n` : `• Session: 🔴 Expired\n`;
-    }
-
     const statusMsg =
       `📊 *Status* (${todayStr})\n` +
       `• In: ${inStr}\n` +
-      `• Out: ${outStr}`
+      `• Out: ${outStr}\n` +
+      `📍 Location: ${matchedEmp.geoLocation || 'Office'}\n\n` +
+      `👉 Reply *in* for Check-In, or *out* for Check-Out`;
 
     await sock.sendMessage(from, { text: statusMsg });
     return;
