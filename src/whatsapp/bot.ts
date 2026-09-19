@@ -4,8 +4,6 @@ import makeWASocket, {
   fetchLatestBaileysVersion,
   Browsers,
   WASocket,
-  proto,
-  generateWAMessageFromContent,
 } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
 import qrcode from 'qrcode-terminal';
@@ -101,8 +99,7 @@ export async function sendWhatsAppNotification(message: string, recipientJid?: s
 }
 
 /**
- * Send interactive buttons via Baileys nativeFlowMessage (wrapped in viewOnceMessage)
- * with graceful fallback to formatted quick-action text options if unsupported by client.
+ * Send interactive buttons with fallback to formatted quick-action text options
  */
 export async function sendWhatsAppButtons(
   fromJid: string,
@@ -113,49 +110,19 @@ export async function sendWhatsAppButtons(
   if (!sock) return false;
 
   try {
-    // 1. Build native quick_reply buttons for WhatsApp Native Flow
-    const nativeButtons = buttons.map((b) => ({
-      name: 'quick_reply',
-      buttonParamsJson: JSON.stringify({
-        display_text: b.text,
-        id: b.id,
-      }),
-    }));
-
-    const interactiveMessage = {
-      body: { text },
-      footer: { text: footer || '' },
-      header: {
-        hasMediaAttachment: false,
-      },
-      nativeFlowMessage: {
-        buttons: nativeButtons,
-        messageParamsJson: '',
-      },
+    // 1. Attempt native Baileys interactive buttons
+    const buttonPayload = {
+      text,
+      footer,
+      buttons: buttons.map((b) => ({
+        buttonId: b.id,
+        buttonText: { displayText: b.text },
+        type: 1,
+      })),
+      headerType: 1,
     };
 
-    // Modern WhatsApp Multi-Device client rendering requires interactiveMessage
-    // to be wrapped in viewOnceMessage with deviceListMetadataVersion: 2
-    const messageContent = {
-      viewOnceMessage: {
-        message: {
-          messageContextInfo: {
-            deviceListMetadata: {},
-            deviceListMetadataVersion: 2,
-          },
-          interactiveMessage,
-        },
-      },
-    };
-
-    const waMsg = generateWAMessageFromContent(fromJid, messageContent as any, {
-      userJid: sock.user?.id || fromJid,
-    });
-
-    await sock.relayMessage(fromJid, waMsg.message!, {
-      messageId: waMsg.key.id!,
-    });
-    console.log(`[WhatsApp Bot] Sent native interactive buttons to ${fromJid}`);
+    await sock.sendMessage(fromJid, buttonPayload as any);
     return true;
   } catch (err) {
     console.warn('[WhatsApp Bot] Native buttons failed/unsupported, using formatted fallback:', err);
@@ -309,21 +276,16 @@ async function handleCommand(from: string, commandText: string, senderName: stri
         });
       }
 
-      await sendWhatsAppButtons(
-        from,
-        `🎉 *Login Successful!*\n\n` +
+      await sock.sendMessage(from, {
+        text:
+          `🎉 *Login Successful!*\n\n` +
           `Welcome *${loginRes.name}* (ID: ${loginRes.employeeId})!\n\n` +
           `✅ Authenticated with HROne Cloud\n` +
           `✅ Linked to this WhatsApp chat\n` +
           `✅ 7-Day Sliding Session Active\n` +
-          `✅ 24/7 Attendance Auto-Pilot Ready`,
-        [
-          { id: 'in', text: '🟢 Check In' },
-          { id: 'out', text: '🔴 Check Out' },
-          { id: 'status', text: '📊 Status' },
-        ],
-        'HROne Quick Actions'
-      );
+          `✅ 24/7 Attendance Auto-Pilot Ready\n\n` +
+          `Send *status* to view your live card, or *in* / *out* to punch attendance!`,
+      });
       return;
     } else if (pending.step === 'AWAITING_USERNAME') {
       const username = commandText.trim();
@@ -390,16 +352,9 @@ async function handleCommand(from: string, commandText: string, senderName: stri
         }
       );
 
-      await sendWhatsAppButtons(
-        from,
-        `✅ *Linked Successfully!*\n\nYour WhatsApp account is now linked to *${target.name}* (ID: ${target.employeeId}).\n\nTap any button below for instant action, or send *help* for all commands:`,
-        [
-          { id: 'in', text: '🟢 Check In' },
-          { id: 'out', text: '🔴 Check Out' },
-          { id: 'status', text: '📊 Status' },
-        ],
-        'HROne Quick Actions'
-      );
+      await sock.sendMessage(from, {
+        text: `✅ *Linked Successfully!*\n\nYour WhatsApp account is now linked to *${target.name}* (ID: ${target.employeeId}).\n\n📌 *Available Commands:*\n• *status* - View your attendance today\n• *in* - Mark your Check-In\n• *out* - Mark your Check-Out\n• *pause* - Turn OFF auto-attendance\n• *resume* - Turn ON auto-attendance\n• *logs* - View your recent punches\n• *refresh* - Extend your login session`,
+      });
       return;
     } else {
       await sock.sendMessage(from, {
@@ -487,20 +442,15 @@ async function handleCommand(from: string, commandText: string, senderName: stri
       });
     }
 
-    await sendWhatsAppButtons(
-      from,
-      `🎉 *Login Successful!*\n\n` +
+    await sock.sendMessage(from, {
+      text:
+        `🎉 *Login Successful!*\n\n` +
         `Welcome *${loginRes.name}* (ID: ${loginRes.employeeId})!\n\n` +
         `✅ Linked to your HROne account\n` +
-        `✅ Your attendance will be marked automatically from now on\n` +
-        `✅ Focus on your work, we will take care of attendance!`,
-      [
-        { id: 'in', text: '🟢 Check In' },
-        { id: 'out', text: '🔴 Check Out' },
-        { id: 'status', text: '📊 Status' },
-      ],
-      'HROne Quick Actions'
-    );
+        `✅ Your attendance will be marked automatically from now on  \n` +
+        `✅ Focus on your work, we will take care of attendance!\n\n` +
+        `Send *status* to see your dashboard, or *in* / *out* to punch attendance!`,
+    });
     return;
   }
 
@@ -549,25 +499,14 @@ async function handleCommand(from: string, commandText: string, senderName: stri
     }
   }
 
-  // 3. HELP / MENU / BUTTONS
-  if (
-    cmd === 'help' ||
-    cmd === 'menu' ||
-    cmd === 'commands' ||
-    cmd === 'cmd' ||
-    cmd === 'hi' ||
-    cmd === 'hello' ||
-    cmd === 'buttons' ||
-    cmd === 'button' ||
-    cmd === 'test buttons' ||
-    cmd === 'test button'
-  ) {
+  // 3. HELP / MENU
+  if (cmd === 'help' || cmd === 'menu' || cmd === 'commands' || cmd === 'cmd' || cmd === 'hi' || cmd === 'hello') {
     const userLine = matchedEmp
       ? `👤 Connected as: *${matchedEmp.name}* (ID: ${matchedEmp.employeeId})\n• Auto-Pilot: ${matchedEmp.schedule.active && matchedEmp.status === 'ACTIVE' ? '🟢 Active' : '⏸️ Paused'}`
       : `🔒 Status: *Not logged in* (Reply with your HROne username to log in)`;
 
     const helpMsg =
-      `📋 *HROne WhatsApp Assistant*\n\n` +
+      `📋 *HROne WhatsApp Commands*\n\n` +
       `${userLine}\n\n` +
       `• *status* - View your attendance card, scheduled times & session health\n` +
       `• *in* (or *checkin*) - Mark Check-In immediately on HROne Cloud\n` +
@@ -580,19 +519,9 @@ async function handleCommand(from: string, commandText: string, senderName: stri
       `• *login* - Enter your HROne credentials (or switch account)\n` +
       `• *logout* (or *reset*) - Unlink this WhatsApp session\n` +
       `• *cancel* (or *abort*) - Abort ongoing action and start fresh\n` +
-      `• *buttons* - Display interactive buttons UI\n\n` +
-      `Tap any button below for instant action:`;
+      `• *help* - Show this command list`;
 
-    await sendWhatsAppButtons(
-      from,
-      helpMsg,
-      [
-        { id: 'in', text: '🟢 Check In' },
-        { id: 'out', text: '🔴 Check Out' },
-        { id: 'status', text: '📊 Status' },
-      ],
-      'HROne Personal Assistant'
-    );
+    await sock.sendMessage(from, { text: helpMsg });
     return;
   }
 
@@ -665,16 +594,7 @@ async function handleCommand(from: string, commandText: string, senderName: stri
     }
     statusMsg += `\n_Send *in* to mark Check-In, or *out* for Check-Out!_`;
 
-    await sendWhatsAppButtons(
-      from,
-      statusMsg,
-      [
-        { id: 'in', text: '🟢 Check In' },
-        { id: 'out', text: '🔴 Check Out' },
-        { id: 'regularize', text: '📅 Regularize' },
-      ],
-      'HROne Attendance Card'
-    );
+    await sock.sendMessage(from, { text: statusMsg });
     return;
   }
 
@@ -1070,79 +990,6 @@ export async function startWhatsAppBot() {
     }
   });
 
-/**
- * Extract incoming text or button selection from any WhatsApp message type
- */
-function extractIncomingText(msg: any): string {
-  let m = msg.message;
-  if (!m) return '';
-
-  // Recursively unwrap common containers (viewOnce, ephemeral, etc.)
-  while (
-    m.viewOnceMessage?.message ||
-    m.viewOnceMessageV2?.message ||
-    m.viewOnceMessageV2Extension?.message ||
-    m.ephemeralMessage?.message ||
-    m.documentWithCaptionMessage?.message
-  ) {
-    m =
-      m.viewOnceMessage?.message ||
-      m.viewOnceMessageV2?.message ||
-      m.viewOnceMessageV2Extension?.message ||
-      m.ephemeralMessage?.message ||
-      m.documentWithCaptionMessage?.message;
-  }
-
-  // 1. Native flow / interactive response (button clicks)
-  const interactive = m.interactiveResponseMessage;
-  if (interactive?.nativeFlowResponseMessage?.paramsJson) {
-    try {
-      const parsed = JSON.parse(interactive.nativeFlowResponseMessage.paramsJson);
-      if (parsed?.id) return String(parsed.id).trim();
-      if (parsed?.display_text) return String(parsed.display_text).trim();
-    } catch {
-      return String(interactive.nativeFlowResponseMessage.paramsJson).trim();
-    }
-  }
-  if (interactive?.body?.text) {
-    return String(interactive.body.text).trim();
-  }
-
-  // 2. Legacy buttons response
-  if (m.buttonsResponseMessage?.selectedButtonId) {
-    return String(m.buttonsResponseMessage.selectedButtonId).trim();
-  }
-  if (m.buttonsResponseMessage?.selectedDisplayText) {
-    return String(m.buttonsResponseMessage.selectedDisplayText).trim();
-  }
-
-  // 3. Template button reply
-  if (m.templateButtonReplyMessage?.selectedId) {
-    return String(m.templateButtonReplyMessage.selectedId).trim();
-  }
-  if (m.templateButtonReplyMessage?.selectedDisplayText) {
-    return String(m.templateButtonReplyMessage.selectedDisplayText).trim();
-  }
-
-  // 4. List response
-  if (m.listResponseMessage?.singleSelectReply?.selectedRowId) {
-    return String(m.listResponseMessage.singleSelectReply.selectedRowId).trim();
-  }
-  if (m.listResponseMessage?.title) {
-    return String(m.listResponseMessage.title).trim();
-  }
-
-  // 5. Standard text messages
-  if (m.conversation) {
-    return m.conversation.trim();
-  }
-  if (m.extendedTextMessage?.text) {
-    return m.extendedTextMessage.text.trim();
-  }
-
-  return '';
-}
-
   // Listen for incoming messages
   sock.ev.on('messages.upsert', async (m) => {
     if (m.type !== 'notify') return;
@@ -1158,8 +1005,11 @@ function extractIncomingText(msg: any): string {
       const from = msg.key.remoteJid;
       if (!from) continue;
 
-      // Extract text content from various message types (including native buttons)
-      const text = extractIncomingText(msg);
+      // Extract text content from various message types
+      const text =
+        msg.message?.conversation ||
+        msg.message?.extendedTextMessage?.text ||
+        '';
 
       if (!text) continue;
 
