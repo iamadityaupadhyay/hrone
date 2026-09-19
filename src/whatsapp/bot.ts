@@ -166,6 +166,37 @@ function formatISTDisplay(timeStr?: string | null): string {
 }
 
 /**
+ * Cleanly format any timestamp or ISO string into Date + Time (IST) format: "19 Sep, 09:30 AM"
+ */
+function formatISTDateTime(timeStr?: string | null): string {
+  if (!timeStr) return '';
+  if (timeStr.includes('T') && !timeStr.endsWith('Z')) {
+    const parts = timeStr.split('T');
+    const datePart = parts[0];
+    const timePart = parts[1] || '';
+    const [, month, day] = datePart.split('-');
+    const [hourStr, minStr] = timePart.split(':');
+    const hour = parseInt(hourStr || '0', 10);
+    const ampm = hour >= 12 ? 'PM' : 'AM';
+    const displayHour = hour % 12 === 0 ? 12 : hour % 12;
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const monthName = months[parseInt(month, 10) - 1] || month;
+    const hourFormatted = displayHour < 10 ? `0${displayHour}` : `${displayHour}`;
+    return `${parseInt(day, 10)} ${monthName}, ${hourFormatted}:${minStr} ${ampm}`;
+  }
+  const d = new Date(timeStr);
+  if (isNaN(d.getTime())) return timeStr;
+  return d.toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  });
+}
+
+/**
  * Handle incoming WhatsApp commands with strict per-employee privacy and data isolation
  */
 async function handleCommand(from: string, commandText: string, senderName: string) {
@@ -670,7 +701,7 @@ async function handleCommand(from: string, commandText: string, senderName: stri
 
     let replyMsg = `📜 *Recent Punches*\n`;
     for (const l of logs) {
-      const timeStr = formatISTDisplay(l.punchTime || l.executedAt);
+      const timeStr = formatISTDateTime(l.punchTime || l.executedAt);
       const icon = l.success ? '✅' : '❌';
       const type = l.punchType === 'CHECK_IN' ? 'In' : 'Out';
       replyMsg += `• ${icon} ${type}: ${timeStr}\n`;
