@@ -160,14 +160,15 @@ async function handleCronTrigger(req: NextRequest) {
           const isCheckIn = punchTypeToRun === 'CHECK_IN';
           const icon = isCheckIn ? '🟢' : '🔴';
           const actionName = isCheckIn ? 'Check-In' : 'Check-Out';
+          const followBack = isCheckIn ? 'Reply *status* or *out*' : 'Reply *status* or *logs*';
           if (punchResult.success) {
             await sendWhatsAppNotification(
-              `${icon} Auto ${actionName}: *${currentIstHHMM}*`,
+              `${icon} Auto ${actionName}: *${currentIstHHMM}*\n\n👉 ${followBack}`,
               recipient
             );
           } else if (isCheckIn) {
             await sendWhatsAppNotification(
-              `⚠️ Auto Check-In failed at *${currentIstHHMM}*. Reply *in* to punch manually.`,
+              `⚠️ Auto Check-In failed at *${currentIstHHMM}*.\n\n👉 Reply *in* to punch manually`,
               recipient
             );
           }

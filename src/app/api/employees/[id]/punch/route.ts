@@ -31,14 +31,15 @@ export async function POST(
       const timeStr = customTime || result.punchTime.split('T')[1] || result.punchTime;
 
       const icon = isCheckIn ? '🟢' : '🔴';
+      const followBack = isCheckIn ? 'Reply *out* to Check-Out or *status*' : 'Reply *status* or *logs*';
       if (result.success) {
         await sendWhatsAppNotification(
-          `${icon} Checked ${isCheckIn ? 'In' : 'Out'} at *${timeStr}*`,
+          `${icon} Checked ${isCheckIn ? 'In' : 'Out'} at *${timeStr}*\n\n👉 ${followBack}`,
           recipient
         );
       } else {
         await sendWhatsAppNotification(
-          `❌ ${actionName} failed: ${result.error || 'Cloud error'}`,
+          `❌ ${actionName} failed: ${result.error || 'Cloud error'}\n\n👉 Reply *${isCheckIn ? 'in' : 'out'}* to retry`,
           recipient
         );
       }

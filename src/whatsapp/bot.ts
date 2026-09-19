@@ -308,7 +308,7 @@ async function handleCommand(from: string, commandText: string, senderName: stri
       }
 
       await sock.sendMessage(from, {
-        text: `🎉 *Connected as ${loginRes.name}* (ID: ${loginRes.employeeId})\nAuto-attendance is active. Send *status* or *help*.`,
+        text: `🎉 *Connected as ${loginRes.name}* (ID: ${loginRes.employeeId})\nAuto-attendance is active.\n\n👉 Reply *status* to view card or *in* / *out* to punch`,
       });
       return;
     } else if (pending.step === 'AWAITING_USERNAME') {
@@ -377,7 +377,7 @@ async function handleCommand(from: string, commandText: string, senderName: stri
       );
 
       await sock.sendMessage(from, {
-        text: `✅ *Linked to ${target.name}* (ID: ${target.employeeId})\nSend *status* or *help*.`,
+        text: `✅ *Linked to ${target.name}* (ID: ${target.employeeId})\n\n👉 Reply *status* to view card or *in* / *out* to punch`,
       });
       return;
     } else {
@@ -467,7 +467,7 @@ async function handleCommand(from: string, commandText: string, senderName: stri
     }
 
     await sock.sendMessage(from, {
-      text: `🎉 *Connected as ${loginRes.name}* (ID: ${loginRes.employeeId})\nAuto-attendance is active. Send *status* or *help*.`,
+      text: `🎉 *Connected as ${loginRes.name}* (ID: ${loginRes.employeeId})\nAuto-attendance is active.\n\n👉 Reply *status* to view card or *in* / *out* to punch`,
     });
     return;
   }
@@ -493,17 +493,17 @@ async function handleCommand(from: string, commandText: string, senderName: stri
       const submitRes = await submitAttendanceRegularization(matchedEmp, pendingReg.dates, 'Tech Issue');
       if (submitRes.success) {
         await sock.sendMessage(from, {
-          text: `✅ Regularization submitted for *${pendingReg.dates.length} date(s)* for approval.`,
+          text: `✅ Regularization submitted for *${pendingReg.dates.length} date(s)* for approval.\n\n👉 Reply *status* for card or *logs* for history`,
         });
       } else {
         await sock.sendMessage(from, {
-          text: `❌ Regularization failed: ${submitRes.error || 'Cloud error'}`,
+          text: `❌ Regularization failed: ${submitRes.error || 'Cloud error'}\n\n👉 Reply *regularize* to retry or *status* for card`,
         });
       }
       return;
     } else if (cmd === 'no' || cmd === 'n' || cmd === 'cancel' || cmd === 'abort') {
       pendingRegularizations.delete(from);
-      await sock.sendMessage(from, { text: `❌ Regularization request cancelled.` });
+      await sock.sendMessage(from, { text: `❌ Regularization request cancelled.\n\n👉 Reply *status* for card or *regularize* to check again` });
       return;
     }
   }
@@ -523,7 +523,8 @@ async function handleCommand(from: string, commandText: string, senderName: stri
       `• *regularize* – Absent days\n` +
       `• *logs* – Recent punches\n` +
       `• *refresh* – Extend session\n` +
-      `• *login* – Link account`;
+      `• *login* – Link account\n\n` +
+      `👉 Reply with any command (e.g. *status*, *in*, *out*)`;
 
     await sock.sendMessage(from, { text: helpMsg });
     return;
@@ -594,8 +595,8 @@ async function handleCommand(from: string, commandText: string, senderName: stri
   if (cmd === 'punch in' || cmd === 'in' || cmd === 'check in' || cmd === 'checkin') {
     const res = await executePunch(matchedEmp, 'CHECK_IN', 'MANUAL');
     const replyMsg = res.success
-      ? `🟢 Checked In at *${formatISTDisplay(res.punchTime)}*`
-      : `❌ Check-In Failed: ${res.error || 'Cloud error'}`;
+      ? `🟢 Checked In at *${formatISTDisplay(res.punchTime)}*\n\n👉 Reply *out* to Check-Out or *status* for card`
+      : `❌ Check-In Failed: ${res.error || 'Cloud error'}\n\n👉 Reply *in* to retry or *status* for card`;
     await sock.sendMessage(from, { text: replyMsg });
     return;
   }
@@ -604,8 +605,8 @@ async function handleCommand(from: string, commandText: string, senderName: stri
   if (cmd === 'punch out' || cmd === 'out' || cmd === 'check out' || cmd === 'checkout') {
     const res = await executePunch(matchedEmp, 'CHECK_OUT', 'MANUAL');
     const replyMsg = res.success
-      ? `🔴 Checked Out at *${formatISTDisplay(res.punchTime)}*`
-      : `❌ Check-Out Failed: ${res.error || 'Cloud error'}`;
+      ? `🔴 Checked Out at *${formatISTDisplay(res.punchTime)}*\n\n👉 Reply *status* for summary or *logs* for history`
+      : `❌ Check-Out Failed: ${res.error || 'Cloud error'}\n\n👉 Reply *out* to retry or *status* for card`;
     await sock.sendMessage(from, { text: replyMsg });
     return;
   }
@@ -632,7 +633,7 @@ async function handleCommand(from: string, commandText: string, senderName: stri
       }
     );
 
-    const pauseMsg = `⏸️ Auto-pilot *paused* for today. (Send *resume* to turn back on)`;
+    const pauseMsg = `⏸️ Auto-pilot *paused* for today.\n\n👉 Reply *resume* to turn back on or *in* / *out* to punch`;
     await sock.sendMessage(from, { text: pauseMsg });
     return;
   }
@@ -659,7 +660,7 @@ async function handleCommand(from: string, commandText: string, senderName: stri
       }
     );
 
-    const resumeMsg = `▶️ Auto-pilot *resumed*.`;
+    const resumeMsg = `▶️ Auto-pilot *resumed*.\n\n👉 Reply *status* to view scheduled times or *pause* to pause`;
     await sock.sendMessage(from, { text: resumeMsg });
     return;
   }
@@ -668,8 +669,8 @@ async function handleCommand(from: string, commandText: string, senderName: stri
   if (cmd === 'refresh') {
     const res = await refreshHROneToken(matchedEmp);
     const replyMsg = res.success
-      ? `🔄 Session extended for 7 days.`
-      : `❌ Token refresh failed: ${res.error}`;
+      ? `🔄 Session extended for 7 days.\n\n👉 Reply *status* or *in* / *out* to punch`
+      : `❌ Token refresh failed: ${res.error}\n\n👉 Reply *login* to re-authenticate`;
     await sock.sendMessage(from, { text: replyMsg });
     return;
   }
@@ -696,6 +697,7 @@ async function handleCommand(from: string, commandText: string, senderName: stri
       const type = l.punchType === 'CHECK_IN' ? 'In' : 'Out';
       replyMsg += `• ${icon} ${type}: ${timeStr}\n`;
     }
+    replyMsg += `\n👉 Reply *status* for today's card or *in* / *out* to punch`;
 
     await sock.sendMessage(from, { text: replyMsg });
     return;
@@ -767,7 +769,7 @@ async function handleCommand(from: string, commandText: string, senderName: stri
 
   // Unknown command fallback
   await sock.sendMessage(from, {
-    text: `❓ Unknown command. Send *help* for options.`,
+    text: `❓ Unknown command.\n\n👉 Reply *in*, *out*, *status*, or *help*`,
   });
 }
 

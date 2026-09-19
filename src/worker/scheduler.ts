@@ -147,12 +147,12 @@ async function runSchedulerTick() {
       if (recipient) {
         if (res.success) {
           await sendWhatsAppNotification(
-            `🟢 Auto Check-In: *${currentIstTime}*`,
+            `🟢 Auto Check-In: *${currentIstTime}*\n\n👉 Reply *status* for today or *out* to Check-Out`,
             recipient
           );
         } else {
           await sendWhatsAppNotification(
-            `⚠️ Auto Check-In failed at *${currentIstTime}*. Reply *in* to punch manually.`,
+            `⚠️ Auto Check-In failed at *${currentIstTime}*.\n\n👉 Reply *in* to punch manually`,
             recipient
           );
         }
@@ -177,7 +177,7 @@ async function runSchedulerTick() {
 
       if (recipient && res.success) {
         await sendWhatsAppNotification(
-          `🔴 Auto Check-Out: *${currentIstTime}*`,
+          `🔴 Auto Check-Out: *${currentIstTime}*\n\n👉 Reply *status* for summary or *logs* for history`,
           recipient
         );
       }
