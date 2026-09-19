@@ -592,9 +592,7 @@ async function handleCommand(from: string, commandText: string, senderName: stri
     const statusMsg =
       `📊 *Status* (${todayStr})\n` +
       `• In: ${inStr}\n` +
-      `• Out: ${outStr}\n` +
-      `• Auto-Pilot: ${autoStr}\n` +
-      daysLeftStr;
+      `• Out: ${outStr}`
 
     await sock.sendMessage(from, { text: statusMsg });
     return;
