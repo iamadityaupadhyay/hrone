@@ -584,7 +584,7 @@ async function handleCommand(from: string, commandText: string, senderName: stri
       `📊 *Status* (${todayStr})\n` +
       `• In: ${inStr}\n` +
       `• Out: ${outStr}\n` +
-      `📍 Location: ${matchedEmp.geoLocation || 'Office'}\n\n` +
+      `📍 ${matchedEmp.geoLocation || 'Office'}\n\n` +
       `👉 Reply *in* for Check-In, or *out* for Check-Out`;
 
     await sock.sendMessage(from, { text: statusMsg });
