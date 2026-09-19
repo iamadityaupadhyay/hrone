@@ -30,19 +30,15 @@ export async function POST(
       const actionName = isCheckIn ? 'Check-In' : 'Check-Out';
       const timeStr = customTime || result.punchTime.split('T')[1] || result.punchTime;
 
+      const icon = isCheckIn ? '🟢' : '🔴';
       if (result.success) {
         await sendWhatsAppNotification(
-          `${title}\n\n` +
-          `Your HROne ${actionName} has been marked manually.\n` +
-          `⏰ Time: *${timeStr} IST*\n` +
-          `📍 Location: ${employee.geoLocation || 'Office'}`,
+          `${icon} Checked ${isCheckIn ? 'In' : 'Out'} at *${timeStr}*`,
           recipient
         );
       } else {
         await sendWhatsAppNotification(
-          `⚠️ *Attendance Alert for ${employee.name}*\n\n` +
-          `Manual ${actionName} attempt failed: ${result.error || 'Unknown error'}\n\n` +
-          `Reply *${isCheckIn ? 'in' : 'out'}* to retry punching manually.`,
+          `❌ ${actionName} failed: ${result.error || 'Cloud error'}`,
           recipient
         );
       }

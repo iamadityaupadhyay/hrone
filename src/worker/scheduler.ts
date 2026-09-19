@@ -142,30 +142,17 @@ async function runSchedulerTick() {
       console.log(
         `[Worker] Check-In outcome for ${emp.name}: ${res.success ? 'SUCCESS' : 'FAILED'} (HTTP ${res.httpStatus})`
       );
-      const apiResponseStr = typeof res.responsePayload === 'object'
-        ? JSON.stringify(res.responsePayload, null, 2)
-        : String(res.responsePayload || res.error || 'Done');
-
       const recipient = resolveWhatsAppRecipient(emp);
 
       if (recipient) {
         if (res.success) {
           await sendWhatsAppNotification(
-            `✅ *Good morning ${emp.name}!*\n\n` +
-            `Your HROne Check-In has been marked automatically.\n` +
-            `⏰ Time: *${currentIstTime} IST*\n` +
-            `📍 Location: ${emp.geoLocation || 'Office'}\n\n` +
-            `*HROne API Response:*\n` +
-            `\`\`\`json\n${apiResponseStr}\n\`\`\``,
+            `🟢 Auto Check-In: *${currentIstTime}*`,
             recipient
           );
         } else {
           await sendWhatsAppNotification(
-            `⚠️ *Attendance Alert for ${emp.name}*\n\n` +
-            `Automated Check-In attempt at *${currentIstTime} IST* failed.\n\n` +
-            `*HROne API Response:*\n` +
-            `\`\`\`json\n${apiResponseStr}\n\`\`\`\n\n` +
-            `Reply *in* to retry punching manually, or *status* to view your card.`,
+            `⚠️ Auto Check-In failed at *${currentIstTime}*. Reply *in* to punch manually.`,
             recipient
           );
         }
@@ -186,20 +173,11 @@ async function runSchedulerTick() {
         `[Worker] Check-Out outcome for ${emp.name}: ${res.success ? 'SUCCESS' : 'FAILED'} (HTTP ${res.httpStatus})`
       );
 
-      const apiResponseStr = typeof res.responsePayload === 'object'
-        ? JSON.stringify(res.responsePayload, null, 2)
-        : String(res.responsePayload || res.error || 'Done');
-
       const recipient = resolveWhatsAppRecipient(emp);
 
       if (recipient && res.success) {
         await sendWhatsAppNotification(
-          `🔴 *Good evening ${emp.name}!*\n\n` +
-          `Your HROne Check-Out has been marked automatically.\n` +
-          `⏰ Time: *${currentIstTime} IST*\n` +
-          `📍 Location: ${emp.geoLocation || 'Office'}\n\n` +
-          `*HROne API Response:*\n` +
-          `\`\`\`json\n${apiResponseStr}\n\`\`\``,
+          `🔴 Auto Check-Out: *${currentIstTime}*`,
           recipient
         );
       }

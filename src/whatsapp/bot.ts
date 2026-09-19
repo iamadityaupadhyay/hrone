@@ -277,14 +277,7 @@ async function handleCommand(from: string, commandText: string, senderName: stri
       }
 
       await sock.sendMessage(from, {
-        text:
-          `🎉 *Login Successful!*\n\n` +
-          `Welcome *${loginRes.name}* (ID: ${loginRes.employeeId})!\n\n` +
-          `✅ Authenticated with HROne Cloud\n` +
-          `✅ Linked to this WhatsApp chat\n` +
-          `✅ 7-Day Sliding Session Active\n` +
-          `✅ 24/7 Attendance Auto-Pilot Ready\n\n` +
-          `Send *status* to view your live card, or *in* / *out* to punch attendance!`,
+        text: `🎉 *Connected as ${loginRes.name}* (ID: ${loginRes.employeeId})\nAuto-attendance is active. Send *status* or *help*.`,
       });
       return;
     } else if (pending.step === 'AWAITING_USERNAME') {
@@ -353,7 +346,7 @@ async function handleCommand(from: string, commandText: string, senderName: stri
       );
 
       await sock.sendMessage(from, {
-        text: `✅ *Linked Successfully!*\n\nYour WhatsApp account is now linked to *${target.name}* (ID: ${target.employeeId}).\n\n📌 *Available Commands:*\n• *status* - View your attendance today\n• *in* - Mark your Check-In\n• *out* - Mark your Check-Out\n• *pause* - Turn OFF auto-attendance\n• *resume* - Turn ON auto-attendance\n• *logs* - View your recent punches\n• *refresh* - Extend your login session`,
+        text: `✅ *Linked to ${target.name}* (ID: ${target.employeeId})\nSend *status* or *help*.`,
       });
       return;
     } else {
@@ -443,13 +436,7 @@ async function handleCommand(from: string, commandText: string, senderName: stri
     }
 
     await sock.sendMessage(from, {
-      text:
-        `🎉 *Login Successful!*\n\n` +
-        `Welcome *${loginRes.name}* (ID: ${loginRes.employeeId})!\n\n` +
-        `✅ Linked to your HROne account\n` +
-        `✅ Your attendance will be marked automatically from now on  \n` +
-        `✅ Focus on your work, we will take care of attendance!\n\n` +
-        `Send *status* to see your dashboard, or *in* / *out* to punch attendance!`,
+      text: `🎉 *Connected as ${loginRes.name}* (ID: ${loginRes.employeeId})\nAuto-attendance is active. Send *status* or *help*.`,
     });
     return;
   }
@@ -472,23 +459,14 @@ async function handleCommand(from: string, commandText: string, senderName: stri
   if (pendingReg && matchedEmp) {
     if (cmd === 'yes' || cmd === 'y' || cmd === 'confirm' || cmd === 'regularize confirm' || cmd === '1') {
       pendingRegularizations.delete(from);
-      await sock.sendMessage(from, {
-        text: `⏳ Submitting Attendance Regularization request for *${pendingReg.dates.length} date(s)*...`,
-      });
-
       const submitRes = await submitAttendanceRegularization(matchedEmp, pendingReg.dates, 'Tech Issue');
       if (submitRes.success) {
         await sock.sendMessage(from, {
-          text:
-            `🎉 *Attendance Regularization Submitted Successfully!*\n\n` +
-            `👤 *${matchedEmp.name}* (ID: ${matchedEmp.employeeId})\n` +
-            `📅 Dates: *${pendingReg.dates.join(', ')}*\n` +
-            `📝 Remarks: Tech Issue\n\n` +
-            `✅ Regularization request sent to HROne Cloud for manager approval!`,
+          text: `✅ Regularization submitted for *${pendingReg.dates.length} date(s)* for approval.`,
         });
       } else {
         await sock.sendMessage(from, {
-          text: `❌ *Regularization Submission Failed:*\n\n${submitRes.error || 'Unknown error from HROne Cloud'}`,
+          text: `❌ Regularization failed: ${submitRes.error || 'Cloud error'}`,
         });
       }
       return;
@@ -502,24 +480,19 @@ async function handleCommand(from: string, commandText: string, senderName: stri
   // 3. HELP / MENU
   if (cmd === 'help' || cmd === 'menu' || cmd === 'commands' || cmd === 'cmd' || cmd === 'hi' || cmd === 'hello') {
     const userLine = matchedEmp
-      ? `👤 Connected as: *${matchedEmp.name}* (ID: ${matchedEmp.employeeId})\n• Auto-Pilot: ${matchedEmp.schedule.active && matchedEmp.status === 'ACTIVE' ? '🟢 Active' : '⏸️ Paused'}`
-      : `🔒 Status: *Not logged in* (Reply with your HROne username to log in)`;
+      ? `👤 *${matchedEmp.name}* | Auto-Pilot: ${matchedEmp.schedule.active && matchedEmp.status === 'ACTIVE' ? '🟢' : '⏸️'}`
+      : `🔒 *Not linked*`;
 
     const helpMsg =
-      `📋 *HROne WhatsApp Commands*\n\n` +
+      `📋 *HROne Commands*\n` +
       `${userLine}\n\n` +
-      `• *status* - View your attendance card, scheduled times & session health\n` +
-      `• *in* (or *checkin*) - Mark Check-In immediately on HROne Cloud\n` +
-      `• *out* (or *checkout*) - Mark Check-Out immediately on HROne Cloud\n` +
-      `• *regularize* (or *ar*, *absent*) - View absent days & submit regularization request\n` +
-      `• *pause* (or *stop*, *leave*) - Turn OFF auto-attendance for today/leave\n` +
-      `• *resume* (or *start*, *unpause*) - Turn ON auto-attendance\n` +
-      `• *logs* - View recent punches with official HROne reference codes\n` +
-      `• *refresh* - Extend your 7-day cloud session\n` +
-      `• *login* - Enter your HROne credentials (or switch account)\n` +
-      `• *logout* (or *reset*) - Unlink this WhatsApp session\n` +
-      `• *cancel* (or *abort*) - Abort ongoing action and start fresh\n` +
-      `• *help* - Show this command list`;
+      `• *in* / *out* – Punch attendance\n` +
+      `• *status* – Today's punches\n` +
+      `• *pause* / *resume* – Auto-pilot\n` +
+      `• *regularize* – Absent days\n` +
+      `• *logs* – Recent punches\n` +
+      `• *refresh* – Extend session\n` +
+      `• *login* – Link account`;
 
     await sock.sendMessage(from, { text: helpMsg });
     return;
@@ -529,11 +502,7 @@ async function handleCommand(from: string, commandText: string, senderName: stri
   if (!matchedEmp) {
     pendingLogins.set(from, { step: 'AWAITING_USERNAME', timestamp: Date.now() });
     await sock.sendMessage(from, {
-      text:
-        `👋 *Hello ${senderName}!* (HROne Personal Bot)\n\n` +
-        `🔒 *Uh! I searched HRONE DB and couldnt find your details*\n\n` +
-        `Please enter your *HROne Employee Code or Registered Phone Number*:\n` +
-        `👉 (Example: *E1885* or *9871251984*)\n\n`,
+      text: `👋 Send your *HROne Employee Code* (e.g. *E1885*) to link your account:`,
     });
     return;
   }
@@ -561,38 +530,40 @@ async function handleCommand(from: string, commandText: string, senderName: stri
     const inLog = todayLogs.find((l) => l.punchType === 'CHECK_IN');
     const outLog = todayLogs.find((l) => l.punchType === 'CHECK_OUT');
 
-    let statusMsg = `📊 *Your Live Attendance Status*\n`;
-    statusMsg += `📅 *Date:* ${todayStr}\n`;
-    statusMsg += `👤 *${matchedEmp.name}* (ID: ${matchedEmp.employeeId})\n\n`;
-
+    let inStr = '⏳ Scheduled';
     if (inLog) {
-      const refCode = (inLog.responsePayload as any)?.messageCode;
-      statusMsg += `• Check-In: ✅ *Done at ${formatISTDisplay(inLog.punchTime || inLog.executedAt)}* (${inLog.triggerType || 'AUTOMATED'}${refCode ? `, Ref: ${refCode}` : ''})\n`;
+      inStr = `✅ ${formatISTDisplay(inLog.punchTime || inLog.executedAt)}`;
     } else if (matchedEmp.todayPunch?.checkInStatus === 'SUCCESS' && matchedEmp.todayPunch.checkedInAt) {
-      statusMsg += `• Check-In: ✅ *Done at ${formatISTDisplay(matchedEmp.todayPunch.checkedInAt)}*\n`;
-    } else {
-      statusMsg += `• Check-In: ⏳ *Scheduled* (${matchedEmp.todayPunch?.plannedCheckIn || matchedEmp.schedule.checkInMin} IST)\n`;
+      inStr = `✅ ${formatISTDisplay(matchedEmp.todayPunch.checkedInAt)}`;
+    } else if (matchedEmp.todayPunch?.plannedCheckIn) {
+      inStr = `⏳ ${matchedEmp.todayPunch.plannedCheckIn}`;
     }
 
+    let outStr = '⏳ Scheduled';
     if (outLog) {
-      const refCode = (outLog.responsePayload as any)?.messageCode;
-      statusMsg += `• Check-Out: ✅ *Done at ${formatISTDisplay(outLog.punchTime || outLog.executedAt)}* (${outLog.triggerType || 'AUTOMATED'}${refCode ? `, Ref: ${refCode}` : ''})\n`;
+      outStr = `✅ ${formatISTDisplay(outLog.punchTime || outLog.executedAt)}`;
     } else if (matchedEmp.todayPunch?.checkOutStatus === 'SUCCESS' && matchedEmp.todayPunch.checkedOutAt) {
-      statusMsg += `• Check-Out: ✅ *Done at ${formatISTDisplay(matchedEmp.todayPunch.checkedOutAt)}*\n`;
-    } else {
-      statusMsg += `• Check-Out: ⏳ *Scheduled* (${matchedEmp.todayPunch?.plannedCheckOut || matchedEmp.schedule.checkOutMin} IST)\n`;
+      outStr = `✅ ${formatISTDisplay(matchedEmp.todayPunch.checkedOutAt)}`;
+    } else if (matchedEmp.todayPunch?.plannedCheckOut) {
+      outStr = `⏳ ${matchedEmp.todayPunch.plannedCheckOut}`;
     }
 
-    statusMsg += `• Auto-Pilot: ${matchedEmp.schedule.active && matchedEmp.status === 'ACTIVE' ? '🟢 Active' : '⏸️ Paused'}\n`;
-    statusMsg += `📍 Location: ${matchedEmp.geoLocation || 'Office'}\n`;
+    const autoStr = matchedEmp.schedule.active && matchedEmp.status === 'ACTIVE' ? '🟢 Active' : '⏸️ Paused';
 
+    let daysLeftStr = '';
     if (matchedEmp.refreshTokenExpiry) {
-      const daysLeft = Math.ceil(
+      const days = Math.ceil(
         (new Date(matchedEmp.refreshTokenExpiry).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
       );
-      statusMsg += `🔑 Cloud Session: ${daysLeft > 0 ? `🟢 Active (${daysLeft} days left)` : '🔴 Expired'}\n`;
+      daysLeftStr = days > 0 ? `• Session: 🟢 ${days}d left\n` : `• Session: 🔴 Expired\n`;
     }
-    statusMsg += `\n_Send *in* to mark Check-In, or *out* for Check-Out!_`;
+
+    const statusMsg =
+      `📊 *Status* (${todayStr})\n` +
+      `• In: ${inStr}\n` +
+      `• Out: ${outStr}\n` +
+      `• Auto-Pilot: ${autoStr}\n` +
+      daysLeftStr;
 
     await sock.sendMessage(from, { text: statusMsg });
     return;
@@ -600,44 +571,20 @@ async function handleCommand(from: string, commandText: string, senderName: stri
 
   // 5. PUNCH IN (Strictly for this sender only - Live HROne API execution)
   if (cmd === 'punch in' || cmd === 'in' || cmd === 'check in' || cmd === 'checkin') {
-    await sock.sendMessage(from, { text: `⏳ Contacting HROne Cloud to mark Check-In for *${matchedEmp.name}*...` });
     const res = await executePunch(matchedEmp, 'CHECK_IN', 'MANUAL');
-    const apiResponseStr = typeof res.responsePayload === 'object'
-      ? JSON.stringify(res.responsePayload, null, 2)
-      : String(res.responsePayload || res.error || 'Done');
-
     const replyMsg = res.success
-      ? `🟢 *Check-In Successful!*\n\n` +
-      `👤 *${matchedEmp.name}*\n` +
-      `⏰ Time: *${formatISTDisplay(res.punchTime)}*\n` +
-      `📍 Location: ${matchedEmp.geoLocation || 'Office'}\n\n` +
-      `*HROne API Response:*\n` +
-      `\`\`\`json\n${apiResponseStr}\n\`\`\``
-      : `❌ *Check-In Failed:*\n\n` +
-      `*HROne API Response:*\n` +
-      `\`\`\`json\n${apiResponseStr}\n\`\`\``;
+      ? `🟢 Checked In at *${formatISTDisplay(res.punchTime)}*`
+      : `❌ Check-In Failed: ${res.error || 'Cloud error'}`;
     await sock.sendMessage(from, { text: replyMsg });
     return;
   }
 
   // 6. PUNCH OUT (Strictly for this sender only - Live HROne API execution)
   if (cmd === 'punch out' || cmd === 'out' || cmd === 'check out' || cmd === 'checkout') {
-    await sock.sendMessage(from, { text: `⏳ Contacting HROne Cloud to mark Check-Out for *${matchedEmp.name}*...` });
     const res = await executePunch(matchedEmp, 'CHECK_OUT', 'MANUAL');
-    const apiResponseStr = typeof res.responsePayload === 'object'
-      ? JSON.stringify(res.responsePayload, null, 2)
-      : String(res.responsePayload || res.error || 'Done');
-
     const replyMsg = res.success
-      ? `🔴 *Check-Out Successful!*\n\n` +
-      `👤 *${matchedEmp.name}*\n` +
-      `⏰ Time: *${formatISTDisplay(res.punchTime)}*\n` +
-      `📍 Location: ${matchedEmp.geoLocation || 'Office'}\n\n` +
-      `*HROne API Response:*\n` +
-      `\`\`\`json\n${apiResponseStr}\n\`\`\``
-      : `❌ *Check-Out Failed:*\n\n` +
-      `*HROne API Response:*\n` +
-      `\`\`\`json\n${apiResponseStr}\n\`\`\``;
+      ? `🔴 Checked Out at *${formatISTDisplay(res.punchTime)}*`
+      : `❌ Check-Out Failed: ${res.error || 'Cloud error'}`;
     await sock.sendMessage(from, { text: replyMsg });
     return;
   }
@@ -664,13 +611,7 @@ async function handleCommand(from: string, commandText: string, senderName: stri
       }
     );
 
-    const pauseMsg =
-      `⏸️ *Auto-Attendance Paused for ${matchedEmp.name}*\n\n` +
-      `Your automated autopilot has been turned *OFF*.\n` +
-      `• No automated punches will run for your account.\n` +
-      `• You can still manually clock in/out with *in* or *out*.\n` +
-      `• To turn auto-attendance back on, reply *resume* or *start*.`;
-
+    const pauseMsg = `⏸️ Auto-pilot *paused* for today. (Send *resume* to turn back on)`;
     await sock.sendMessage(from, { text: pauseMsg });
     return;
   }
@@ -697,24 +638,17 @@ async function handleCommand(from: string, commandText: string, senderName: stri
       }
     );
 
-    const resumeMsg =
-      `▶️ *Auto-Attendance Resumed for ${matchedEmp.name}!*\n\n` +
-      `Your automated autopilot is now *ON*.\n` +
-      `• Check-In window: ${matchedEmp.schedule.checkInMin} - ${matchedEmp.schedule.checkInMax}\n` +
-      `• Check-Out window: ${matchedEmp.schedule.checkOutMin} - ${matchedEmp.schedule.checkOutMax}\n` +
-      `• The worker will autonomously handle your attendance.`;
-
+    const resumeMsg = `▶️ Auto-pilot *resumed*.`;
     await sock.sendMessage(from, { text: resumeMsg });
     return;
   }
 
   // 9. REFRESH LOGIN SESSION (Strictly for this sender only)
   if (cmd === 'refresh') {
-    await sock.sendMessage(from, { text: `⏳ Refreshing session for *${matchedEmp.name}*...` });
     const res = await refreshHROneToken(matchedEmp);
     const replyMsg = res.success
-      ? `🔄 *Session Refreshed!*\n\nLogin session for *${matchedEmp.name}* has been extended for another 7 days.`
-      : `❌ *Token Refresh Failed:*\n\n${res.error}`;
+      ? `🔄 Session extended for 7 days.`
+      : `❌ Token refresh failed: ${res.error}`;
     await sock.sendMessage(from, { text: replyMsg });
     return;
   }
@@ -734,16 +668,12 @@ async function handleCommand(from: string, commandText: string, senderName: stri
       return;
     }
 
-    let replyMsg = `📜 *Your Recent Punch Activity (Last 5)*\n\n`;
+    let replyMsg = `📜 *Recent Punches*\n`;
     for (const l of logs) {
       const timeStr = formatISTDisplay(l.punchTime || l.executedAt);
-      const statusIcon = l.success ? '✅' : '❌';
-      const refCode = (l.responsePayload as any)?.messageCode;
-      replyMsg += `${statusIcon} *${l.punchType}* (${l.triggerType || 'AUTOMATED'})\n`;
-      replyMsg += `  ⏰ ${timeStr}\n`;
-      if (refCode) replyMsg += `  ⚡ HROne Ref: ${refCode}\n`;
-      if (l.error) replyMsg += `  ⚠️ Reason: ${l.error}\n`;
-      replyMsg += `\n`;
+      const icon = l.success ? '✅' : '❌';
+      const type = l.punchType === 'CHECK_IN' ? 'In' : 'Out';
+      replyMsg += `• ${icon} ${type}: ${timeStr}\n`;
     }
 
     await sock.sendMessage(from, { text: replyMsg });
@@ -780,7 +710,7 @@ async function handleCommand(from: string, commandText: string, senderName: stri
 
     if (unregDays.length === 0) {
       await sock.sendMessage(from, {
-        text: `✅ *No Absent or Missed Punch Days Found for This Month!*\n\nYour attendance calendar is fully up to date for this month for *${matchedEmp.name}*.`,
+        text: `✅ No absent or missed punch days found for this month.`,
       });
       return;
     }
@@ -792,21 +722,10 @@ async function handleCommand(from: string, commandText: string, senderName: stri
       timestamp: Date.now(),
     });
 
-    let msg = `📅 *Absent / Missed Punch Days Found for ${matchedEmp.name} (Current Month):*\n\n`;
-    for (const d of unregDays) {
-      msg += `• *${d.date}* (${d.status})\n`;
-    }
-    msg += `\nWould you like to submit Attendance Regularization (AR) for these dates?`;
-
-    await sendWhatsAppButtons(
-      from,
-      msg,
-      [
-        { id: 'yes', text: 'Apply Regularize' },
-        { id: 'cancel', text: 'Cancel' },
-      ],
-      'HROne Regularization Assistant'
-    );
+    const datesStr = unregDays.map((d) => `• ${d.date} (${d.status})`).join('\n');
+    await sock.sendMessage(from, {
+      text: `📅 *Absent Days:*\n${datesStr}\n\nReply *yes* to regularize or *cancel*.`,
+    });
     return;
   }
 
@@ -820,14 +739,14 @@ async function handleCommand(from: string, commandText: string, senderName: stri
     cmd === 'resume all'
   ) {
     await sock.sendMessage(from, {
-      text: `🔒 Team-wide commands are restricted for privacy and security. You can only view and manage your own attendance.`,
+      text: `🔒 Team-wide commands are restricted for privacy.`,
     });
     return;
   }
 
   // Unknown command fallback
   await sock.sendMessage(from, {
-    text: `❓ Unrecognized command: *"${commandText}"*\n\nSend *help* to see your available commands.`,
+    text: `❓ Unknown command. Send *help* for options.`,
   });
 }
 

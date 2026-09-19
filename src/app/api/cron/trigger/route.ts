@@ -158,21 +158,16 @@ async function handleCronTrigger(req: NextRequest) {
 
         if (recipient) {
           const isCheckIn = punchTypeToRun === 'CHECK_IN';
-          const title = isCheckIn ? `✅ *Good morning ${emp.name}!*` : `🔴 *Good evening ${emp.name}!*`;
+          const icon = isCheckIn ? '🟢' : '🔴';
           const actionName = isCheckIn ? 'Check-In' : 'Check-Out';
           if (punchResult.success) {
             await sendWhatsAppNotification(
-              `${title}\n\n` +
-              `Your HROne ${actionName} has been marked automatically.\n` +
-              `⏰ Time: *${currentIstHHMM} IST*\n` +
-              `📍 Location: ${emp.geoLocation || 'Office'}`,
+              `${icon} Auto ${actionName}: *${currentIstHHMM}*`,
               recipient
             );
           } else if (isCheckIn) {
             await sendWhatsAppNotification(
-              `⚠️ *Attendance Alert for ${emp.name}*\n\n` +
-              `Automated Check-In attempt at *${currentIstHHMM} IST* failed: ${punchResult.error || 'Unknown error'}\n\n` +
-              `Reply *in* to retry punching manually.`,
+              `⚠️ Auto Check-In failed at *${currentIstHHMM}*. Reply *in* to punch manually.`,
               recipient
             );
           }
