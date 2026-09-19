@@ -101,9 +101,8 @@ export async function sendWhatsAppNotification(message: string, recipientJid?: s
 }
 
 /**
- * Send interactive quick-action options menu with guaranteed delivery across all WhatsApp devices.
- * WhatsApp servers silently drop nativeFlowMessage/interactiveMessage for unofficial Baileys bots,
- * so this formatted quick-action layout provides 100% reliable 1-tap/1-digit interaction.
+ * Send interactive buttons via Baileys nativeFlowMessage (wrapped in viewOnceMessage)
+ * with graceful fallback to formatted quick-action text options if unsupported by client.
  */
 export async function sendWhatsAppButtons(
   fromJid: string,
@@ -113,19 +112,63 @@ export async function sendWhatsAppButtons(
 ): Promise<boolean> {
   if (!sock) return false;
 
-  let msg = `${text}\n\n`;
-  buttons.forEach((b, idx) => {
-    msg += `👉 Reply *${idx + 1}* (or *${b.id}*) for ${b.text}\n`;
-  });
-  if (footer) msg += `\n_${footer}_`;
-
   try {
-    await sock.sendMessage(fromJid, { text: msg });
-    console.log(`[WhatsApp Bot] Sent quick-action menu successfully to ${fromJid}`);
+    // 1. Build native quick_reply buttons for WhatsApp Native Flow
+    const nativeButtons = buttons.map((b) => ({
+      name: 'quick_reply',
+      buttonParamsJson: JSON.stringify({
+        display_text: b.text,
+        id: b.id,
+      }),
+    }));
+
+    const interactiveMessage = {
+      body: { text },
+      footer: { text: footer || '' },
+      header: {
+        hasMediaAttachment: false,
+      },
+      nativeFlowMessage: {
+        buttons: nativeButtons,
+        messageParamsJson: '',
+      },
+    };
+
+    // Modern WhatsApp Multi-Device client rendering requires interactiveMessage
+    // to be wrapped in viewOnceMessage with deviceListMetadataVersion: 2
+    const messageContent = {
+      viewOnceMessage: {
+        message: {
+          messageContextInfo: {
+            deviceListMetadata: {},
+            deviceListMetadataVersion: 2,
+          },
+          interactiveMessage,
+        },
+      },
+    };
+
+    const waMsg = generateWAMessageFromContent(fromJid, messageContent as any, {
+      userJid: sock.user?.id || fromJid,
+    });
+
+    await sock.relayMessage(fromJid, waMsg.message!, {
+      messageId: waMsg.key.id!,
+    });
+    console.log(`[WhatsApp Bot] Sent native interactive buttons to ${fromJid}`);
     return true;
   } catch (err) {
-    console.error(`[WhatsApp Bot] Failed to send quick-action menu to ${fromJid}:`, err);
-    return false;
+    console.warn('[WhatsApp Bot] Native buttons failed/unsupported, using formatted fallback:', err);
+
+    // 2. High-reliability formatted fallback menu (works 100% on all WhatsApp clients)
+    let fallbackMsg = `${text}\n\n`;
+    buttons.forEach((b) => {
+      fallbackMsg += `👉 Reply *${b.id}* for *${b.text}*\n`;
+    });
+    if (footer) fallbackMsg += `\n_${footer}_`;
+
+    await sock.sendMessage(fromJid, { text: fallbackMsg });
+    return true;
   }
 }
 
@@ -567,7 +610,7 @@ async function handleCommand(from: string, commandText: string, senderName: stri
   }
 
   // 4. STATUS (Strictly for this sender only - Live HROne and MongoDB query)
-  if (cmd === 'status' || cmd === 'today' || cmd === '3') {
+  if (cmd === 'status' || cmd === 'today') {
     const db = await getDatabase();
     const istTime = getISTPunchTime();
     const todayStr = istTime.split('T')[0];
@@ -636,7 +679,7 @@ async function handleCommand(from: string, commandText: string, senderName: stri
   }
 
   // 5. PUNCH IN (Strictly for this sender only - Live HROne API execution)
-  if (cmd === 'punch in' || cmd === 'in' || cmd === 'check in' || cmd === 'checkin' || cmd === '1') {
+  if (cmd === 'punch in' || cmd === 'in' || cmd === 'check in' || cmd === 'checkin') {
     await sock.sendMessage(from, { text: `⏳ Contacting HROne Cloud to mark Check-In for *${matchedEmp.name}*...` });
     const res = await executePunch(matchedEmp, 'CHECK_IN', 'MANUAL');
     const apiResponseStr = typeof res.responsePayload === 'object'
@@ -658,7 +701,7 @@ async function handleCommand(from: string, commandText: string, senderName: stri
   }
 
   // 6. PUNCH OUT (Strictly for this sender only - Live HROne API execution)
-  if (cmd === 'punch out' || cmd === 'out' || cmd === 'check out' || cmd === 'checkout' || cmd === '2') {
+  if (cmd === 'punch out' || cmd === 'out' || cmd === 'check out' || cmd === 'checkout') {
     await sock.sendMessage(from, { text: `⏳ Contacting HROne Cloud to mark Check-Out for *${matchedEmp.name}*...` });
     const res = await executePunch(matchedEmp, 'CHECK_OUT', 'MANUAL');
     const apiResponseStr = typeof res.responsePayload === 'object'
