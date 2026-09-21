@@ -25,8 +25,10 @@ import {
   Lock,
   ShieldAlert,
   Save,
+  Megaphone,
 } from 'lucide-react';
 import { EmployeeProfile, PunchLog } from '@/lib/types/employee';
+import BroadcastModal from '@/components/BroadcastModal';
 
 function formatTokenExpiry(isoString?: string) {
   if (!isoString) return 'Active (Auto-refresh)';
@@ -66,6 +68,7 @@ export default function AttendanceDashboard() {
 
   // WhatsApp Bot State
   const [showWhatsAppModal, setShowWhatsAppModal] = useState<boolean>(false);
+  const [showBroadcastModal, setShowBroadcastModal] = useState<boolean>(false);
   const [whatsAppStatus, setWhatsAppStatus] = useState<{
     status: string;
     phoneNumber?: string;
@@ -449,6 +452,14 @@ export default function AttendanceDashboard() {
               {whatsAppStatus?.status === 'CONNECTED' && (
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
               )}
+            </button>
+            <button
+              onClick={() => setShowBroadcastModal(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-violet-600/15 hover:bg-violet-600/25 border border-violet-500/30 text-violet-200 text-xs font-semibold shadow-sm transition-all active:scale-95"
+              title="Broadcast Announcement to Employees via WhatsApp"
+            >
+              <Megaphone className="w-3.5 h-3.5 text-violet-400" />
+              <span>Broadcast</span>
             </button>
             <button
               onClick={() => fetchData()}
@@ -1307,6 +1318,15 @@ export default function AttendanceDashboard() {
           </div>
         </div>
       )}
+
+      {/* Broadcast Modal */}
+      <BroadcastModal
+        isOpen={showBroadcastModal}
+        onClose={() => setShowBroadcastModal(false)}
+        employees={employees}
+        whatsAppStatus={whatsAppStatus}
+        onSuccessNotification={(msg) => setFeedback({ type: 'success', message: msg })}
+      />
     </div>
   );
 }

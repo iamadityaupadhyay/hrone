@@ -8,7 +8,7 @@ import { executePunch, generateRandomPunchTime, getISTPunchTime, isTimeTriggerMa
 import { refreshHROneToken } from '../lib/hrone/token';
 import { getDatabase } from '../lib/mongodb';
 import { EmployeeProfile } from '../lib/types/employee';
-import { getWhatsAppBotStatus, resolveWhatsAppRecipient, sendWhatsAppNotification, startWhatsAppBot } from '../whatsapp/bot';
+import { getWhatsAppBotStatus, resolveWhatsAppRecipient, sendBroadcast, sendWhatsAppNotification, startWhatsAppBot } from '../whatsapp/bot';
 
 async function runSchedulerTick() {
   const now = new Date();
@@ -197,10 +197,53 @@ async function startWorker() {
     console.error('[Worker] Error launching WhatsApp Bot:', err);
   }
 
+async function processPendingBroadcasts() {
+  try {
+    const db = await getDatabase();
+    const pending = await db.collection('broadcasts').findOne({ status: 'QUEUED' });
+    if (!pending) return;
+
+    console.log(`[Worker] Picked up queued broadcast: ${pending._id}. Sending to ${pending.recipients?.length || 0} recipients...`);
+    await db.collection('broadcasts').updateOne(
+      { _id: pending._id },
+      { $set: { status: 'SENDING', startedAt: new Date().toISOString() } }
+    );
+
+    const { sentCount, failedCount, results } = await sendBroadcast(pending.message, pending.recipients || []);
+
+    await db.collection('broadcasts').updateOne(
+      { _id: pending._id },
+      {
+        $set: {
+          status: 'COMPLETED',
+          sentCount,
+          failedCount,
+          results,
+          completedAt: new Date().toISOString(),
+        },
+      }
+    );
+
+    console.log(`[Worker] Broadcast ${pending._id} successfully completed! (Sent: ${sentCount}, Failed: ${failedCount})`);
+  } catch (err) {
+    console.error('[Worker] Error processing pending broadcast:', err);
+  }
+}
+
   // Run initial tick immediately
   await runSchedulerTick();
+  await processPendingBroadcasts();
 
-  // Run every 60 seconds
+  // Check for queued broadcasts every 5 seconds
+  const broadcastInterval = setInterval(async () => {
+    try {
+      await processPendingBroadcasts();
+    } catch (err) {
+      console.error('[Worker] Error in broadcast polling loop:', err);
+    }
+  }, 5000);
+
+  // Run attendance scheduler every 60 seconds
   const interval = setInterval(async () => {
     try {
       await runSchedulerTick();
@@ -212,6 +255,7 @@ async function startWorker() {
   const cleanup = () => {
     console.log('\n[Worker] Stopping attendance worker...');
     clearInterval(interval);
+    clearInterval(broadcastInterval);
     process.exit(0);
   };
 

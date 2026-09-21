@@ -98,6 +98,58 @@ export async function sendWhatsAppNotification(message: string, recipientJid?: s
   }
 }
 
+export interface BroadcastRecipient {
+  employeeId?: string;
+  name?: string;
+  jid: string;
+}
+
+export interface BroadcastExecutionResult {
+  sentCount: number;
+  failedCount: number;
+  results: Array<{
+    employeeId?: string;
+    name?: string;
+    jid: string;
+    success: boolean;
+    error?: string;
+  }>;
+}
+
+/**
+ * Send a broadcast message to multiple WhatsApp recipients with throttling
+ */
+export async function sendBroadcast(
+  message: string,
+  recipients: BroadcastRecipient[]
+): Promise<BroadcastExecutionResult> {
+  const results: BroadcastExecutionResult['results'] = [];
+  let sentCount = 0;
+  let failedCount = 0;
+
+  for (const r of recipients) {
+    try {
+      const ok = await sendWhatsAppNotification(message, r.jid);
+      if (ok) {
+        sentCount++;
+        results.push({ employeeId: r.employeeId, name: r.name, jid: r.jid, success: true });
+      } else {
+        failedCount++;
+        results.push({ employeeId: r.employeeId, name: r.name, jid: r.jid, success: false, error: 'Send returned false' });
+      }
+    } catch (err) {
+      failedCount++;
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      results.push({ employeeId: r.employeeId, name: r.name, jid: r.jid, success: false, error: errorMsg });
+    }
+
+    // 350ms delay between sends to respect WhatsApp rate limiting
+    await new Promise((res) => setTimeout(res, 350));
+  }
+
+  return { sentCount, failedCount, results };
+}
+
 /**
  * Send interactive buttons with fallback to formatted quick-action text options
  */
