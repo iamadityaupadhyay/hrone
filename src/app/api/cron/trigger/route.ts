@@ -1,7 +1,8 @@
 import { getAllEmployees } from '@/lib/db/employees';
 import { isHolidayToday } from '@/lib/db/holidays';
-import { executePunch, getISTPunchTime } from '@/lib/hrone/punch';
+import { executePunch, generateRandomPunchTime, getISTPunchTime, isTimeTriggerMatch } from '@/lib/hrone/punch';
 import { refreshHROneToken } from '@/lib/hrone/token';
+import { getDatabase } from '@/lib/mongodb';
 import { resolveWhatsAppRecipient } from '@/lib/whatsapp/recipient';
 import { sendWhatsAppNotification } from '@/whatsapp/bot';
 import { NextRequest, NextResponse } from 'next/server';
@@ -113,31 +114,77 @@ async function handleCronTrigger(req: NextRequest) {
         }
       }
 
-      // Check if already completed today unless force=true
-      if (!force && punchTypeToRun) {
-        const alreadyCheckedIn =
-          emp.todayPunch?.date === todayDateStr && emp.todayPunch.checkInStatus === 'SUCCESS';
-        const alreadyCheckedOut =
-          emp.todayPunch?.date === todayDateStr && emp.todayPunch.checkOutStatus === 'SUCCESS';
+      // Ensure planned punch times exist for today
+      let todayPunch = emp.todayPunch;
+      if (!todayPunch || todayPunch.date !== todayDateStr) {
+        const plannedIn = generateRandomPunchTime(
+          emp.schedule.checkInMin || '08:00',
+          emp.schedule.checkInMax || '10:00'
+        );
+        const plannedOut = generateRandomPunchTime(
+          emp.schedule.checkOutMin || '19:00',
+          emp.schedule.checkOutMax || '21:00'
+        );
 
-        if (punchTypeToRun === 'CHECK_IN' && alreadyCheckedIn) {
-          results.push({
-            employeeId: emp.employeeId,
-            name: emp.name,
-            skipped: true,
-            reason: `Already checked in today at ${emp.todayPunch?.checkedInAt}`,
-          });
-          continue;
+        todayPunch = {
+          date: todayDateStr,
+          plannedCheckIn: plannedIn,
+          plannedCheckOut: plannedOut,
+          checkInStatus: 'PENDING',
+          checkOutStatus: 'PENDING',
+        };
+
+        const db = await getDatabase();
+        await db.collection('employees').updateOne(
+          { employeeId: emp.employeeId },
+          { $set: { todayPunch, updatedAt: new Date().toISOString() } }
+        );
+      }
+
+      // Check if already completed today or if planned time hasn't arrived (unless force=true)
+      if (!force && punchTypeToRun) {
+        if (punchTypeToRun === 'CHECK_IN') {
+          if (todayPunch.checkInStatus === 'SUCCESS') {
+            results.push({
+              employeeId: emp.employeeId,
+              name: emp.name,
+              skipped: true,
+              reason: `Already checked in today at ${todayPunch.checkedInAt}`,
+            });
+            continue;
+          }
+
+          if (!isTimeTriggerMatch(currentIstHHMM, todayPunch.plannedCheckIn || '09:00')) {
+            results.push({
+              employeeId: emp.employeeId,
+              name: emp.name,
+              skipped: true,
+              reason: `Scheduled for Check-In at ${todayPunch.plannedCheckIn} (current: ${currentIstHHMM})`,
+            });
+            continue;
+          }
         }
 
-        if (punchTypeToRun === 'CHECK_OUT' && alreadyCheckedOut) {
-          results.push({
-            employeeId: emp.employeeId,
-            name: emp.name,
-            skipped: true,
-            reason: `Already checked out today at ${emp.todayPunch?.checkedOutAt}`,
-          });
-          continue;
+        if (punchTypeToRun === 'CHECK_OUT') {
+          if (todayPunch.checkOutStatus === 'SUCCESS') {
+            results.push({
+              employeeId: emp.employeeId,
+              name: emp.name,
+              skipped: true,
+              reason: `Already checked out today at ${todayPunch.checkedOutAt}`,
+            });
+            continue;
+          }
+
+          if (!isTimeTriggerMatch(currentIstHHMM, todayPunch.plannedCheckOut || '19:30')) {
+            results.push({
+              employeeId: emp.employeeId,
+              name: emp.name,
+              skipped: true,
+              reason: `Scheduled for Check-Out at ${todayPunch.plannedCheckOut} (current: ${currentIstHHMM})`,
+            });
+            continue;
+          }
         }
       }
 

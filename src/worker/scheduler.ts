@@ -4,54 +4,11 @@ dotenv.config({ path: '.env' });
 
 import * as http from 'http';
 import { getAllEmployees } from '../lib/db/employees';
-import { executePunch, getISTPunchTime } from '../lib/hrone/punch';
+import { executePunch, generateRandomPunchTime, getISTPunchTime, isTimeTriggerMatch } from '../lib/hrone/punch';
 import { refreshHROneToken } from '../lib/hrone/token';
 import { getDatabase } from '../lib/mongodb';
 import { EmployeeProfile } from '../lib/types/employee';
 import { getWhatsAppBotStatus, resolveWhatsAppRecipient, sendWhatsAppNotification, startWhatsAppBot } from '../whatsapp/bot';
-
-/**
- * Generate a random integer between min and max inclusive
- */
-function getRandomInt(min: number, max: number): number {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-
-
-/**
- * Generate humanized planned punch time (HH:mm) within min/max bounds
- */
-function generateRandomPunchTime(minTimeStr: string, maxTimeStr: string): string {
-  const [minH, minM] = minTimeStr.split(':').map(Number);
-  const [maxH, maxM] = maxTimeStr.split(':').map(Number);
-
-  const minTotalMinutes = minH * 60 + minM;
-  const maxTotalMinutes = maxH * 60 + maxM;
-
-  // Add a slight 5-min inner buffer so it never punches on the exact boundary
-  const bufferedMin = Math.min(minTotalMinutes + 5, maxTotalMinutes - 5);
-  const bufferedMax = Math.max(minTotalMinutes + 5, maxTotalMinutes - 5);
-
-  const randomMinutes = getRandomInt(bufferedMin, bufferedMax);
-  const h = Math.floor(randomMinutes / 60);
-  const m = randomMinutes % 60;
-
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-}
-
-/**
- * Check if current time (HH:mm) matches or has passed planned time (within window)
- */
-function isTimeTriggerMatch(currentTimeStr: string, plannedTimeStr: string, maxWindowHours = 4): boolean {
-  const [currH, currM] = currentTimeStr.split(':').map(Number);
-  const [planH, planM] = plannedTimeStr.split(':').map(Number);
-
-  const currTotal = currH * 60 + currM;
-  const planTotal = planH * 60 + planM;
-
-  // Allow trigger if current time is >= planned time and within max window (defaults to 4 hours)
-  return currTotal >= planTotal && currTotal <= planTotal + (maxWindowHours * 60);
-}
 
 async function runSchedulerTick() {
   const now = new Date();
