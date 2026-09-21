@@ -99,7 +99,7 @@ async function handleCronTrigger(req: NextRequest) {
         const [inStartH] = (emp.schedule.checkInMin || '09:30').split(':').map(Number);
         const [inEndH] = (emp.schedule.checkInMax || '09:55').split(':').map(Number);
         const [outStartH] = (emp.schedule.checkOutMin || '19:00').split(':').map(Number);
-        const [outEndH] = (emp.schedule.checkOutMax || '21:00').split(':').map(Number);
+        const [outEndH] = (emp.schedule.checkOutMax || '19:30').split(':').map(Number);
 
         // Generous window bounds for automated cloud crons
         const morningWindowStart = Math.min(inStartH, 9);
@@ -123,7 +123,7 @@ async function handleCronTrigger(req: NextRequest) {
         );
         const plannedOut = generateRandomPunchTime(
           emp.schedule.checkOutMin || '19:00',
-          emp.schedule.checkOutMax || '21:00'
+          emp.schedule.checkOutMax || '19:30'
         );
 
         todayPunch = {

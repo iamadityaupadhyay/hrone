@@ -96,7 +96,7 @@ export default function AttendanceDashboard() {
     checkInMin: '09:30',
     checkInMax: '09:55',
     checkOutMin: '19:00',
-    checkOutMax: '21:00',
+    checkOutMax: '19:30',
     geoLocation: '210-211, altF, Sector 142, Noida, Uttar Pradesh 201304, India',
     latitude: '28.5004327',
     longitude: '77.4150811',

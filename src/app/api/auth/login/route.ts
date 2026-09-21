@@ -44,7 +44,7 @@ export async function POST(req: NextRequest) {
         checkInMin: '09:30',
         checkInMax: '09:55',
         checkOutMin: '19:00',
-        checkOutMax: '21:00',
+        checkOutMax: '19:30',
         workingDays: [1, 2, 3, 4, 5],
       },
       status: 'ACTIVE',
