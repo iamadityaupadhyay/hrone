@@ -96,14 +96,14 @@ async function handleCronTrigger(req: NextRequest) {
         // Auto mode based on current IST hour
         // Morning Window (8:00 AM - 12:00 PM) -> Check In
         // Evening Window (5:00 PM - 11:00 PM) -> Check Out
-        const [inStartH] = (emp.schedule.checkInMin || '08:00').split(':').map(Number);
-        const [inEndH] = (emp.schedule.checkInMax || '10:00').split(':').map(Number);
+        const [inStartH] = (emp.schedule.checkInMin || '09:30').split(':').map(Number);
+        const [inEndH] = (emp.schedule.checkInMax || '09:55').split(':').map(Number);
         const [outStartH] = (emp.schedule.checkOutMin || '19:00').split(':').map(Number);
         const [outEndH] = (emp.schedule.checkOutMax || '21:00').split(':').map(Number);
 
         // Generous window bounds for automated cloud crons
-        const morningWindowStart = Math.min(inStartH, 8);
-        const morningWindowEnd = Math.max(inEndH, 12);
+        const morningWindowStart = Math.min(inStartH, 9);
+        const morningWindowEnd = Math.max(inEndH, 11);
         const eveningWindowStart = Math.min(outStartH, 17);
         const eveningWindowEnd = Math.max(outEndH, 23);
 
@@ -118,8 +118,8 @@ async function handleCronTrigger(req: NextRequest) {
       let todayPunch = emp.todayPunch;
       if (!todayPunch || todayPunch.date !== todayDateStr) {
         const plannedIn = generateRandomPunchTime(
-          emp.schedule.checkInMin || '08:00',
-          emp.schedule.checkInMax || '10:00'
+          emp.schedule.checkInMin || '09:30',
+          emp.schedule.checkInMax || '09:55'
         );
         const plannedOut = generateRandomPunchTime(
           emp.schedule.checkOutMin || '19:00',

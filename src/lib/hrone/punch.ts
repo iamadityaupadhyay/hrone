@@ -69,8 +69,11 @@ export function generateRandomPunchTime(minTimeStr: string, maxTimeStr: string):
   const minTotalMinutes = minH * 60 + minM;
   const maxTotalMinutes = maxH * 60 + maxM;
 
-  const bufferedMin = Math.min(minTotalMinutes + 5, maxTotalMinutes - 5);
-  const bufferedMax = Math.max(minTotalMinutes + 5, maxTotalMinutes - 5);
+  const windowMinutes = Math.max(0, maxTotalMinutes - minTotalMinutes);
+  const buffer = windowMinutes >= 60 ? 5 : (windowMinutes >= 20 ? 1 : 0);
+
+  const bufferedMin = Math.min(minTotalMinutes + buffer, maxTotalMinutes - buffer);
+  const bufferedMax = Math.max(minTotalMinutes + buffer, maxTotalMinutes - buffer);
 
   const randomMinutes = getRandomInt(bufferedMin, bufferedMax);
   const h = Math.floor(randomMinutes / 60);

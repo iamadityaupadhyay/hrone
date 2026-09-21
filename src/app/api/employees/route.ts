@@ -73,8 +73,8 @@ export async function POST(req: NextRequest) {
         '210-211, altF, Sector 142, Noida, Uttar Pradesh 201304, India',
       schedule: profileData.schedule || {
         active: true,
-        checkInMin: '08:00',
-        checkInMax: '10:00',
+        checkInMin: '09:30',
+        checkInMax: '09:55',
         checkOutMin: '19:00',
         checkOutMax: '21:00',
         workingDays: [1, 2, 3, 4, 5],

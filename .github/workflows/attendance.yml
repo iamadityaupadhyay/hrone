@@ -2,8 +2,8 @@ name: Automated Attendance Cron
 
 on:
   schedule:
-    # 9:20 AM IST (03:50 UTC) Monday-Friday
-    - cron: '50 3 * * 1-5'
+    # 10:00 AM IST (04:30 UTC) Monday-Friday
+    - cron: '30 4 * * 1-5'
     # 9:00 PM IST (15:30 UTC) Monday-Friday
     - cron: '30 15 * * 1-5'
   workflow_dispatch:
