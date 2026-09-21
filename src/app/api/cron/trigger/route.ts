@@ -49,13 +49,13 @@ async function handleCronTrigger(req: NextRequest) {
     const results: Array<Record<string, unknown>> = [];
 
     for (const emp of activeEmployees) {
-      // 1. Check working days unless force=true
-      if (!force && !emp.schedule.workingDays.includes(dayOfWeek)) {
+      // 1. Check working days (exclude weekends: Sunday = 0, Saturday = 6 unless force=true)
+      if (!force && (dayOfWeek === 0 || dayOfWeek === 6 || !emp.schedule.workingDays.includes(dayOfWeek))) {
         results.push({
           employeeId: emp.employeeId,
           name: emp.name,
           skipped: true,
-          reason: `Skipped: Not a scheduled working day (day of week: ${dayOfWeek})`,
+          reason: `Skipped: Not a scheduled working day / weekend (day of week: ${dayOfWeek})`,
         });
         continue;
       }

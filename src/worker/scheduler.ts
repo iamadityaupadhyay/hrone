@@ -94,8 +94,8 @@ async function runSchedulerTick() {
       }
     }
 
-    // 2. Check if today is a working day for this employee
-    if (!emp.schedule.workingDays.includes(dayOfWeek)) {
+    // 2. Check if today is a working day (exclude weekends: Sunday = 0, Saturday = 6)
+    if (dayOfWeek === 0 || dayOfWeek === 6 || !emp.schedule.workingDays.includes(dayOfWeek)) {
       continue;
     }
 
