@@ -12,7 +12,7 @@ Built with **Next.js 16**, **TypeScript**, **Tailwind CSS**, and **MongoDB**.
 - **Humanized Schedule Jitter**:
   - Morning Check-In: Random minute between **09:00 AM – 10:00 AM** (e.g. 09:14, 09:27, 09:41).
   - Evening Check-Out: Random minute between **07:00 PM – 07:30 PM** (e.g. 19:07, 19:18, 19:26).
-  - Skips weekends automatically.
+  - Skips Sundays automatically; Saturday auto-punch is configurable per employee via the Dashboard or WhatsApp bot (`sat on` / `sat off`).
 - **1-Click Onboarding**: Add team members by simply pasting their HROne attendance cURL or cookie from browser DevTools. The system auto-extracts `employeeId`, tokens, username, domain, and geolocation.
 - **Live Administrative Dashboard**:
   - Employee status cards (Autopilot ON/Paused, token health, today's schedule).

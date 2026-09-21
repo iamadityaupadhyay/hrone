@@ -572,6 +572,7 @@ async function handleCommand(from: string, commandText: string, senderName: stri
       `• *in* / *out* – Punch attendance\n` +
       `• *status* – Today's punches\n` +
       `• *pause* / *resume* – Auto-pilot\n` +
+      `• *sat on* / *sat off* – Saturday auto-punch\n` +
       `• *regularize* – Absent days\n` +
       `• *logs* – Recent punches\n` +
       `• *refresh* – Extend session\n` +
@@ -632,10 +633,12 @@ async function handleCommand(from: string, commandText: string, senderName: stri
       outStr = `⏳ ${matchedEmp.todayPunch.plannedCheckOut}`;
     }
 
+    const isSatEnabled = (matchedEmp.schedule?.workingDays || [1, 2, 3, 4, 5]).includes(6);
     const statusMsg =
       `📊 *Status* (${todayStr})\n` +
       `• In: ${inStr}\n` +
       `• Out: ${outStr}\n` +
+      `• Saturday Auto-Punch: ${isSatEnabled ? '🟢 Enabled' : '⚪ Disabled'}\n` +
       `📍 ${matchedEmp.geoLocation || 'Office'}\n\n` +
       `👉 Reply *in* for Check-In, or *out* for Check-Out`;
 
@@ -646,9 +649,10 @@ async function handleCommand(from: string, commandText: string, senderName: stri
   // 5. PUNCH IN (Strictly for this sender only - Live HROne API execution)
   if (cmd === 'punch in' || cmd === 'in' || cmd === 'check in' || cmd === 'checkin') {
     const res = await executePunch(matchedEmp, 'CHECK_IN', 'MANUAL');
+    const loc = matchedEmp.geoLocation || 'Office';
     const replyMsg = res.success
-      ? `🟢 Checked In at *${formatISTDisplay(res.punchTime)}*\n\n👉 Reply *out* to Check-Out or *status* for card`
-      : `❌ Check-In Failed: ${res.error || 'Cloud error'}\n\n👉 Reply *in* to retry or *status* for card`;
+      ? `🌅 *Good morning ${matchedEmp.name}!* ☀️\n\n🟢 Checked In at *${formatISTDisplay(res.punchTime)}*\n📍 Location: *${loc}*\n\n👉 Reply *out* to Check-Out or *status* for card`
+      : `🌅 *Good morning ${matchedEmp.name}!*\n\n❌ Check-In Failed: ${res.error || 'Cloud error'}\n📍 Location: *${loc}*\n\n👉 Reply *in* to retry or *status* for card`;
     await sock.sendMessage(from, { text: replyMsg });
     return;
   }
@@ -656,9 +660,10 @@ async function handleCommand(from: string, commandText: string, senderName: stri
   // 6. PUNCH OUT (Strictly for this sender only - Live HROne API execution)
   if (cmd === 'punch out' || cmd === 'out' || cmd === 'check out' || cmd === 'checkout') {
     const res = await executePunch(matchedEmp, 'CHECK_OUT', 'MANUAL');
+    const loc = matchedEmp.geoLocation || 'Office';
     const replyMsg = res.success
-      ? `🔴 Checked Out at *${formatISTDisplay(res.punchTime)}*\n\n👉 Reply *status* for summary or *logs* for history`
-      : `❌ Check-Out Failed: ${res.error || 'Cloud error'}\n\n👉 Reply *out* to retry or *status* for card`;
+      ? `🌆 *Good evening ${matchedEmp.name}!* 🌙\n\n🔴 Checked Out at *${formatISTDisplay(res.punchTime)}*\n📍 Location: *${loc}*\n\n👉 Reply *status* for summary or *logs* for history`
+      : `🌆 *Good evening ${matchedEmp.name}!*\n\n❌ Check-Out Failed: ${res.error || 'Cloud error'}\n📍 Location: *${loc}*\n\n👉 Reply *out* to retry or *status* for card`;
     await sock.sendMessage(from, { text: replyMsg });
     return;
   }
@@ -714,6 +719,55 @@ async function handleCommand(from: string, commandText: string, senderName: stri
 
     const resumeMsg = `▶️ Auto-pilot *resumed*.\n\n👉 Reply *status* to view scheduled times or *pause* to pause`;
     await sock.sendMessage(from, { text: resumeMsg });
+    return;
+  }
+
+  // 8b. TOGGLE SATURDAY AUTO-ATTENDANCE (Strictly for this sender only)
+  if (
+    cmd === 'sat on' ||
+    cmd === 'saturday on' ||
+    cmd === 'enable sat' ||
+    cmd === 'enable saturday' ||
+    cmd === 'sat punch on'
+  ) {
+    const currentDays = matchedEmp.schedule?.workingDays || [1, 2, 3, 4, 5];
+    const newDays = Array.from(new Set([...currentDays, 6])).sort();
+    const db = await getDatabase();
+    await db.collection('employees').updateOne(
+      { employeeId: matchedEmp.employeeId },
+      {
+        $set: {
+          'schedule.workingDays': newDays,
+          updatedAt: new Date().toISOString(),
+        },
+      }
+    );
+    const msg = `📅 *Saturday Auto-Punch: Enabled* for *${matchedEmp.name}*!\n\nAttendance will now automatically be marked on Saturdays too.\n\n👉 Reply *sat off* to disable or *status* for today's summary`;
+    await sock.sendMessage(from, { text: msg });
+    return;
+  }
+
+  if (
+    cmd === 'sat off' ||
+    cmd === 'saturday off' ||
+    cmd === 'disable sat' ||
+    cmd === 'disable saturday' ||
+    cmd === 'sat punch off'
+  ) {
+    const currentDays = matchedEmp.schedule?.workingDays || [1, 2, 3, 4, 5];
+    const newDays = currentDays.filter((d) => d !== 6);
+    const db = await getDatabase();
+    await db.collection('employees').updateOne(
+      { employeeId: matchedEmp.employeeId },
+      {
+        $set: {
+          'schedule.workingDays': newDays,
+          updatedAt: new Date().toISOString(),
+        },
+      }
+    );
+    const msg = `📅 *Saturday Auto-Punch: Disabled* for *${matchedEmp.name}*.\n\nAttendance will skip Saturdays (Mon–Fri only).\n\n👉 Reply *sat on* to enable or *status* for today's summary`;
+    await sock.sendMessage(from, { text: msg });
     return;
   }
 

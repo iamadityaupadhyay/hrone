@@ -26,7 +26,8 @@ export async function POST(
     const recipient = resolveWhatsAppRecipient(employee);
     if (recipient) {
       const isCheckIn = punchType === 'CHECK_IN';
-      const title = isCheckIn ? `✅ *Good morning ${employee.name}!*` : `🔴 *Good evening ${employee.name}!*`;
+      const greeting = isCheckIn ? `🌅 *Good morning ${employee.name}!* ☀️` : `🌆 *Good evening ${employee.name}!* 🌙`;
+      const location = employee.geoLocation || 'Office';
       const actionName = isCheckIn ? 'Check-In' : 'Check-Out';
       const timeStr = customTime || result.punchTime.split('T')[1] || result.punchTime;
 
@@ -34,12 +35,12 @@ export async function POST(
       const followBack = isCheckIn ? 'Reply *out* to Check-Out or *status*' : 'Reply *status* or *logs*';
       if (result.success) {
         await sendWhatsAppNotification(
-          `${icon} Checked ${isCheckIn ? 'In' : 'Out'} at *${timeStr}*\n\n👉 ${followBack}`,
+          `${greeting}\n\n${icon} Checked ${isCheckIn ? 'In' : 'Out'} at *${timeStr}*\n📍 Location: *${location}*\n\n👉 ${followBack}`,
           recipient
         );
       } else {
         await sendWhatsAppNotification(
-          `❌ ${actionName} failed: ${result.error || 'Cloud error'}\n\n👉 Reply *${isCheckIn ? 'in' : 'out'}* to retry`,
+          `${greeting}\n\n❌ ${actionName} failed: ${result.error || 'Cloud error'}\n📍 Location: *${location}*\n\n👉 Reply *${isCheckIn ? 'in' : 'out'}* to retry`,
           recipient
         );
       }

@@ -4,7 +4,7 @@ export interface EmployeeSchedule {
   checkInMax: string; // "10:00"
   checkOutMin: string; // "19:00" (7:00 PM)
   checkOutMax: string; // "19:30" (7:30 PM)
-  workingDays: number[]; // [1, 2, 3, 4, 5] -> Mon to Fri
+  workingDays: number[]; // [1, 2, 3, 4, 5] -> Mon to Fri; add 6 for Saturday (configurable per user)
 }
 
 export interface TodayPunchState {

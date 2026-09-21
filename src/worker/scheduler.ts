@@ -51,8 +51,9 @@ async function runSchedulerTick() {
       }
     }
 
-    // 2. Check if today is a working day (exclude weekends: Sunday = 0, Saturday = 6)
-    if (dayOfWeek === 0 || dayOfWeek === 6 || !emp.schedule.workingDays.includes(dayOfWeek)) {
+    // 2. Check if today is a scheduled working day for this employee (Mon-Fri by default; Sat=6 if configured)
+    const workingDays = emp.schedule?.workingDays?.length ? emp.schedule.workingDays : [1, 2, 3, 4, 5];
+    if (!workingDays.includes(dayOfWeek)) {
       continue;
     }
 
@@ -102,14 +103,15 @@ async function runSchedulerTick() {
       const recipient = resolveWhatsAppRecipient(emp);
 
       if (recipient) {
+        const location = emp.geoLocation || 'Office';
         if (res.success) {
           await sendWhatsAppNotification(
-            `🟢 Auto Check-In: *${currentIstTime}*\n\n👉 Reply *status* for today or *out* to Check-Out`,
+            `🌅 *Good morning ${emp.name}!* ☀️\n\n🟢 Auto Check-In: *${currentIstTime}*\n📍 Location: *${location}*\n\n👉 Reply *status* for today or *out* to Check-Out`,
             recipient
           );
         } else {
           await sendWhatsAppNotification(
-            `⚠️ Auto Check-In failed at *${currentIstTime}*.\n\n👉 Reply *in* to punch manually`,
+            `🌅 *Good morning ${emp.name}!*\n\n⚠️ Auto Check-In failed at *${currentIstTime}*.\n📍 Location: *${location}*\n\n👉 Reply *in* to punch manually`,
             recipient
           );
         }
@@ -132,11 +134,19 @@ async function runSchedulerTick() {
 
       const recipient = resolveWhatsAppRecipient(emp);
 
-      if (recipient && res.success) {
-        await sendWhatsAppNotification(
-          `🔴 Auto Check-Out: *${currentIstTime}*\n\n👉 Reply *status* for summary or *logs* for history`,
-          recipient
-        );
+      if (recipient) {
+        const location = emp.geoLocation || 'Office';
+        if (res.success) {
+          await sendWhatsAppNotification(
+            `🌆 *Good evening ${emp.name}!* 🌙\n\n🔴 Auto Check-Out: *${currentIstTime}*\n📍 Location: *${location}*\n\n👉 Reply *status* for summary or *logs* for history`,
+            recipient
+          );
+        } else {
+          await sendWhatsAppNotification(
+            `🌆 *Good evening ${emp.name}!*\n\n⚠️ Auto Check-Out failed at *${currentIstTime}*.\n📍 Location: *${location}*\n\n👉 Reply *out* to punch manually`,
+            recipient
+          );
+        }
       }
     }
   }
