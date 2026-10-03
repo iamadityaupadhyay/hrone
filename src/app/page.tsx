@@ -27,6 +27,8 @@ import {
   Save,
   Megaphone,
   Calendar,
+  Play,
+  Pause,
 } from 'lucide-react';
 import { EmployeeProfile, PunchLog } from '@/lib/types/employee';
 import BroadcastModal from '@/components/BroadcastModal';
@@ -236,6 +238,37 @@ export default function AttendanceDashboard() {
     }
   };
 
+  const handleAutopilotAll = async (action: 'resume' | 'pause') => {
+    const actionKey = `autopilot-all-${action}`;
+    setActionLoading(actionKey);
+    setFeedback(null);
+    try {
+      const res = await fetch('/api/employees/autopilot-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setFeedback({
+          type: 'success',
+          message: data.message || `All autopilots ${action === 'resume' ? 'resumed' : 'paused'} successfully!`,
+        });
+      } else {
+        setFeedback({
+          type: 'error',
+          message: data.message || data.error || `Failed to ${action} autopilots.`,
+        });
+      }
+      fetchData();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : `Failed to ${action} autopilots`;
+      setFeedback({ type: 'error', message: msg });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const handleRefreshToken = async (employeeId: number, forcePassword = false) => {
     const actionKey = `refresh-${employeeId}`;
     setActionLoading(actionKey);
@@ -312,14 +345,18 @@ export default function AttendanceDashboard() {
 
   const handleToggleActive = async (employee: EmployeeProfile) => {
     try {
+      const nextActive = !employee.schedule.active;
       const updatedSchedule = {
         ...employee.schedule,
-        active: !employee.schedule.active,
+        active: nextActive,
       };
       const res = await fetch(`/api/employees/${employee.employeeId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ schedule: updatedSchedule }),
+        body: JSON.stringify({
+          schedule: updatedSchedule,
+          status: nextActive ? 'ACTIVE' : 'PAUSED',
+        }),
       });
       const data = await res.json();
       if (data.success) {
@@ -522,6 +559,45 @@ export default function AttendanceDashboard() {
               <Key className={`w-3.5 h-3.5 text-amber-400 ${actionLoading === 'login-all' ? 'animate-spin' : ''}`} />
               <span>{actionLoading === 'login-all' ? 'Logging in...' : 'Login All Users'}</span>
             </button>
+
+            {/* Bulk Autopilot Controls */}
+            <div className="flex items-center rounded-xl bg-slate-900/60 border border-slate-800 p-0.5">
+              <button
+                onClick={() => handleAutopilotAll('resume')}
+                disabled={actionLoading?.startsWith('autopilot-all')}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all active:scale-95 disabled:opacity-50 ${
+                  activeCount < employees.length
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/30 shadow-sm shadow-emerald-500/10'
+                    : 'text-slate-300 hover:text-emerald-300 hover:bg-emerald-500/10'
+                }`}
+                title="Resume autopilot for all employees"
+              >
+                {actionLoading === 'autopilot-all-resume' ? (
+                  <RotateCw className="w-3.5 h-3.5 animate-spin text-emerald-400" />
+                ) : (
+                  <Play className="w-3 h-3 fill-emerald-400 text-emerald-400" />
+                )}
+                <span>Resume All</span>
+              </button>
+              <button
+                onClick={() => {
+                  if (confirm('Are you sure you want to pause auto-pilot for all employees?')) {
+                    handleAutopilotAll('pause');
+                  }
+                }}
+                disabled={actionLoading?.startsWith('autopilot-all')}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-rose-300 hover:bg-rose-500/10 transition-all active:scale-95 disabled:opacity-50"
+                title="Pause autopilot for all employees"
+              >
+                {actionLoading === 'autopilot-all-pause' ? (
+                  <RotateCw className="w-3.5 h-3.5 animate-spin text-rose-400" />
+                ) : (
+                  <Pause className="w-3 h-3 text-slate-400" />
+                )}
+                <span>Pause</span>
+              </button>
+            </div>
+
             <button
               onClick={() => setIsModalOpen(true)}
               className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-md shadow-indigo-600/20 transition-all active:scale-95"
@@ -561,15 +637,42 @@ export default function AttendanceDashboard() {
         )}
 
         {/* Minimalist Summary Bar */}
-        <div className="flex items-center justify-between text-xs text-slate-400 px-1">
-          <div className="flex items-center gap-2">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-slate-400 px-1">
+          <div className="flex flex-wrap items-center gap-2">
             <span>Enrolled: <strong className="text-white">{employees.length}</strong></span>
             <span>•</span>
-            <span>Autopilot Active: <strong className="text-emerald-400">{activeCount}</strong></span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+              Autopilot Active: <strong className="text-emerald-400">{activeCount}</strong>
+            </span>
+            {employees.length - activeCount > 0 && (
+              <>
+                <span>•</span>
+                <span className="flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                  Paused: <strong className="text-amber-400">{employees.length - activeCount}</strong>
+                </span>
+              </>
+            )}
             <span>•</span>
             <span>Sat Auto: <strong className="text-amber-400">{satCount}</strong></span>
           </div>
-          <div>
+          <div className="flex items-center gap-2.5">
+            {employees.length - activeCount > 0 && (
+              <button
+                onClick={() => handleAutopilotAll('resume')}
+                disabled={actionLoading?.startsWith('autopilot-all')}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 font-semibold text-xs transition-all active:scale-95"
+                title="Quickly resume all paused autopilots"
+              >
+                {actionLoading === 'autopilot-all-resume' ? (
+                  <RotateCw className="w-3 h-3 animate-spin text-emerald-400" />
+                ) : (
+                  <Play className="w-3 h-3 fill-emerald-400 text-emerald-400" />
+                )}
+                <span>Resume All ({employees.length - activeCount} paused)</span>
+              </button>
+            )}
             <span>Today: <strong className="text-slate-200">{new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</strong></span>
           </div>
         </div>
