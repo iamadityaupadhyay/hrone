@@ -690,7 +690,7 @@ async function handleCommand(from: string, commandText: string, senderName: stri
       }
     );
 
-    const pauseMsg = `⏸️ Auto-pilot *paused* for today.\n\n👉 Reply *resume* to turn back on or *in* / *out* to punch`;
+    const pauseMsg = `⏸️ Auto-pilot *paused* and you have to send resume again when needed.\n\n👉 Reply *resume* to turn back on or *in* / *out* to punch`;
     await sock.sendMessage(from, { text: pauseMsg });
     return;
   }
