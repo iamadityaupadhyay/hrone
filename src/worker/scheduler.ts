@@ -8,6 +8,7 @@ import { executePunch, generateRandomPunchTime, getISTPunchTime, isTimeTriggerMa
 import { refreshHROneToken } from '../lib/hrone/token';
 import { getDatabase } from '../lib/mongodb';
 import { EmployeeProfile } from '../lib/types/employee';
+import { isHolidayToday, syncAllActiveEmployeesHolidays } from '../lib/db/holidays';
 import { getWhatsAppBotStatus, resolveWhatsAppRecipient, sendBroadcast, sendWhatsAppNotification, startWhatsAppBot } from '../whatsapp/bot';
 
 async function runSchedulerTick() {
@@ -57,6 +58,12 @@ async function runSchedulerTick() {
       continue;
     }
 
+    // 2b. Check official holiday calendar (company-wide & employee-specific)
+    const holidayCheck = await isHolidayToday(emp.employeeId, todayDateStr, emp);
+    if (holidayCheck.isHoliday) {
+      continue;
+    }
+
     // 3. Ensure planned punch times exist for today
     let todayPunch = emp.todayPunch;
     if (!todayPunch || todayPunch.date !== todayDateStr) {
@@ -103,7 +110,7 @@ async function runSchedulerTick() {
       const recipient = resolveWhatsAppRecipient(emp);
 
       if (recipient) {
-        const location = emp.geoLocation || 'Office';
+        const location = (dayOfWeek === 6 && emp.saturdayGeoLocation) ? emp.saturdayGeoLocation : (emp.geoLocation || 'Office');
         if (res.success) {
           await sendWhatsAppNotification(
             `🌅 *Good morning ${emp.name}!* ☀️\n\n🟢 Auto Check-In: *${currentIstTime}*\n📍 Location: *${location}*\n\n👉 Reply *status* for today or *out* to Check-Out`,
@@ -135,7 +142,7 @@ async function runSchedulerTick() {
       const recipient = resolveWhatsAppRecipient(emp);
 
       if (recipient) {
-        const location = emp.geoLocation || 'Office';
+        const location = (dayOfWeek === 6 && emp.saturdayGeoLocation) ? emp.saturdayGeoLocation : (emp.geoLocation || 'Office');
         if (res.success) {
           await sendWhatsAppNotification(
             `🌆 *Good evening ${emp.name}!* 🌙\n\n🔴 Auto Check-Out: *${currentIstTime}*\n📍 Location: *${location}*\n\n👉 Reply *status* for summary or *logs* for history`,
@@ -240,6 +247,24 @@ async function processPendingBroadcasts() {
   }
 }
 
+  // Background sync for official holiday calendar from HROne
+  async function refreshHolidaysBackground() {
+    try {
+      console.log('[Worker] Checking & refreshing official holiday calendar from HROne...');
+      const emps = await getAllEmployees().catch(() => []);
+      const active = emps.filter((e) => e.status === 'ACTIVE');
+      if (active.length > 0) {
+        const result = await syncAllActiveEmployeesHolidays(active);
+        console.log(`[Worker] Official holiday calendar refreshed. Synced: ${result.totalSynced} records.`);
+      }
+    } catch (err) {
+      console.warn('[Worker] Holiday calendar background sync notice:', err);
+    }
+  }
+
+  // Refresh holidays on startup
+  await refreshHolidaysBackground();
+
   // Run initial tick immediately
   await runSchedulerTick();
   await processPendingBroadcasts();
@@ -262,10 +287,20 @@ async function processPendingBroadcasts() {
     }
   }, 60 * 1000);
 
+  // Refresh official holidays every 12 hours
+  const holidaySyncInterval = setInterval(async () => {
+    try {
+      await refreshHolidaysBackground();
+    } catch (err) {
+      console.error('[Worker] Error in holiday sync loop:', err);
+    }
+  }, 12 * 60 * 60 * 1000);
+
   const cleanup = () => {
     console.log('\n[Worker] Stopping attendance worker...');
     clearInterval(interval);
     clearInterval(broadcastInterval);
+    clearInterval(holidaySyncInterval);
     process.exit(0);
   };
 

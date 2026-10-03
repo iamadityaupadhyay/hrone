@@ -59,22 +59,61 @@ export async function getEmployeeHolidays(employeeId: number, year?: number): Pr
 }
 
 /**
- * Check if a given date ("YYYY-MM-DD") is a holiday for an employee
+ * Check if a given date ("YYYY-MM-DD") is an official holiday.
+ * Checks employee-specific calendar first, then falls back to company-wide calendar.
  */
 export async function isHolidayToday(
-  employeeId: number,
-  dateStr?: string
+  employeeId?: number,
+  dateStr?: string,
+  employeeProfile?: EmployeeProfile
 ): Promise<{ isHoliday: boolean; holidayName?: string }> {
   const targetDate = dateStr || new Date().toISOString().split('T')[0];
   const db = await getDatabase();
   const collection = db.collection(HOLIDAYS_COLLECTION);
 
-  const doc = await collection.findOne({ employeeId, date: targetDate });
-  if (doc) {
+  // 1. Try finding an official holiday specifically for this employee
+  if (employeeId) {
+    const doc = await collection.findOne({ employeeId, date: targetDate });
+    if (doc) {
+      return {
+        isHoliday: true,
+        holidayName: doc.holidayName || 'Official Holiday',
+      };
+    }
+  }
+
+  // 2. Fallback: Check if ANY employee in the company has an official (non-restricted) holiday on this date
+  const companyDoc = await collection.findOne({
+    date: targetDate,
+    isRestrictedHoliday: { $ne: true },
+  });
+  if (companyDoc) {
     return {
       isHoliday: true,
-      holidayName: doc.holidayName || 'Official Holiday',
+      holidayName: companyDoc.holidayName || 'Official Holiday',
     };
+  }
+
+  // 3. Fallback: If DB is empty and employee profile was passed, try on-demand sync from HROne API
+  if (employeeProfile) {
+    try {
+      const count = await collection.countDocuments();
+      if (count === 0) {
+        await syncEmployeeHolidays(employeeProfile);
+        const retryDoc = await collection.findOne({
+          date: targetDate,
+          isRestrictedHoliday: { $ne: true },
+        });
+        if (retryDoc) {
+          return {
+            isHoliday: true,
+            holidayName: retryDoc.holidayName || 'Official Holiday',
+          };
+        }
+      }
+    } catch {
+      // Ignore background sync errors during fallback
+    }
   }
 
   return { isHoliday: false };
@@ -96,4 +135,32 @@ export async function syncEmployeeHolidays(
 
   const savedCount = await saveHolidays(employee.employeeId, currentYear, res.holidays);
   return { success: true, count: savedCount };
+}
+
+/**
+ * Sync holiday calendars for active employees to ensure company-wide holiday calendar is always up to date
+ */
+export async function syncAllActiveEmployeesHolidays(
+  employees: EmployeeProfile[],
+  year?: number
+): Promise<{ totalSynced: number; errors: string[] }> {
+  const currentYear = year || new Date().getFullYear();
+  let totalSynced = 0;
+  const errors: string[] = [];
+
+  for (const emp of employees) {
+    if (emp.status !== 'ACTIVE') continue;
+    try {
+      const res = await syncEmployeeHolidays(emp, currentYear);
+      if (res.success) {
+        totalSynced += res.count;
+      } else if (res.error) {
+        errors.push(`${emp.name}: ${res.error}`);
+      }
+    } catch (err) {
+      errors.push(`${emp.name}: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
+  }
+
+  return { totalSynced, errors };
 }

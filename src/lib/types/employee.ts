@@ -34,6 +34,10 @@ export interface EmployeeProfile {
   longitude: string; // e.g. "77.4150811"
   geoAccuracy: string; // e.g. "12.126"
   geoLocation: string; // e.g. "210-211, altF, Sector 142, Noida, Uttar Pradesh 201304, India"
+  saturdayLatitude?: string; // Optional custom coordinates for Saturday remote work
+  saturdayLongitude?: string;
+  saturdayGeoAccuracy?: string;
+  saturdayGeoLocation?: string; // e.g. "Home, Indirapuram, Ghaziabad" (different from office)
   schedule: EmployeeSchedule;
   status: 'ACTIVE' | 'PAUSED' | 'NEEDS_REAUTH';
   lastTokenRefresh?: string;

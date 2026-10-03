@@ -121,7 +121,22 @@ export async function executePunch(
   const endpoint = 'https://app.hrone.cloud/api/timeoffice/mobile/checkin/Attendance/Request';
   const punchTime = customPunchTime || getISTPunchTime();
   const domain = employee.companyDomainCode || 'uharvest';
-  const jitteredGeo = getJitteredLocation(employee.latitude, employee.longitude, employee.geoAccuracy);
+
+  // Check if punch is happening on a Saturday (Day 6 in IST)
+  const punchDateStr = punchTime.split('T')[0];
+  const dayOfWeek = new Date(`${punchDateStr}T12:00:00+05:30`).getDay();
+  const isSaturday = dayOfWeek === 6;
+
+  // If Saturday and employee has configured a Saturday remote location, use it
+  const effectiveLat = isSaturday && employee.saturdayLatitude ? employee.saturdayLatitude : employee.latitude;
+  const effectiveLng = isSaturday && employee.saturdayLongitude ? employee.saturdayLongitude : employee.longitude;
+  const effectiveAcc = isSaturday && employee.saturdayGeoAccuracy ? employee.saturdayGeoAccuracy : employee.geoAccuracy;
+  const effectiveLocation =
+    isSaturday && employee.saturdayGeoLocation
+      ? employee.saturdayGeoLocation
+      : (employee.geoLocation || '210-211, altF, Sector 142, Noida, Uttar Pradesh 201304, India');
+
+  const jitteredGeo = getJitteredLocation(effectiveLat, effectiveLng, effectiveAcc);
 
   const payload = {
     requestType: 'A',
@@ -130,8 +145,7 @@ export async function executePunch(
     latitude: jitteredGeo.latitude,
     longitude: jitteredGeo.longitude,
     geoAccuracy: jitteredGeo.geoAccuracy,
-    geoLocation:
-      employee.geoLocation || '210-211, altF, Sector 142, Noida, Uttar Pradesh 201304, India',
+    geoLocation: effectiveLocation,
     punchTime,
     remarks: '',
     uploadedPhotoOneName: '',

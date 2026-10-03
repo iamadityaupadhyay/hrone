@@ -12,6 +12,7 @@ import pino from 'pino';
 import path from 'path';
 import fs from 'fs';
 import { getAllEmployees } from '../lib/db/employees';
+import { isHolidayToday } from '../lib/db/holidays';
 import { loginWithHROne } from '../lib/hrone/auth';
 import { executePunch, getISTPunchTime } from '../lib/hrone/punch';
 import { refreshHROneToken } from '../lib/hrone/token';
@@ -39,6 +40,20 @@ interface PendingRegularizationState {
   timestamp: number;
 }
 const pendingRegularizations = new Map<string, PendingRegularizationState>();
+
+export interface WhatsAppLocationData {
+  latitude: number;
+  longitude: number;
+  name?: string;
+  address?: string;
+  accuracy?: number;
+}
+
+interface PendingSaturdayLocationState {
+  employeeId: number;
+  timestamp: number;
+}
+const pendingSaturdayLocations = new Map<string, PendingSaturdayLocationState>();
 
 export function getWhatsAppBotStatus() {
   return {
@@ -249,9 +264,104 @@ function formatISTDateTime(timeStr?: string | null): string {
 }
 
 /**
+ * Calculate distance in meters between a point and the Noida Sector 142 Office (28.5004327, 77.4150811)
+ */
+function getDistanceFromOfficeMeters(lat: number, lng: number): number {
+  const officeLat = 28.5004327;
+  const officeLng = 77.4150811;
+  const R = 6371e3; // meters
+  const phi1 = (lat * Math.PI) / 180;
+  const phi2 = (officeLat * Math.PI) / 180;
+  const deltaPhi = ((officeLat - lat) * Math.PI) / 180;
+  const deltaLambda = ((officeLng - lng) * Math.PI) / 180;
+  const a =
+    Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) +
+    Math.cos(phi1) * Math.cos(phi2) * Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+/**
+ * Reverse geocode a GPS point or return clean fallback name
+ */
+async function resolveLocationAddress(
+  lat: number,
+  lng: number,
+  fallbackName?: string,
+  fallbackAddress?: string
+): Promise<string> {
+  if (fallbackAddress && fallbackAddress.trim().length > 5) return fallbackAddress.trim();
+  if (fallbackName && fallbackName.trim().length > 5) return fallbackName.trim();
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`, {
+      headers: { 'User-Agent': 'HROneAttendanceBot/1.0' },
+      signal: AbortSignal.timeout(2500),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.display_name) {
+        return data.display_name;
+      }
+    }
+  } catch {
+    // fallback
+  }
+  return fallbackName || fallbackAddress || `Home / Remote (${lat.toFixed(5)}, ${lng.toFixed(5)})`;
+}
+
+/**
+ * Get representative residential NCR coordinates for a typed address/area safely away from Sector 142
+ */
+function getCoordinatesForAddress(address: string): { latitude: string; longitude: string } {
+  const lower = address.toLowerCase();
+  let baseLat = 28.6289;
+  let baseLng = 77.3650;
+
+  if (lower.includes('indirapuram') || lower.includes('ghaziabad') || lower.includes('vaishali') || lower.includes('vasundhara')) {
+    baseLat = 28.6425;
+    baseLng = 77.3732;
+  } else if (lower.includes('gaur') || lower.includes('greater noida') || lower.includes('grenowest') || lower.includes('noida ext')) {
+    baseLat = 28.6080;
+    baseLng = 77.4320;
+  } else if (lower.includes('sector 62') || lower.includes('sec 62') || lower.includes('sector 63')) {
+    baseLat = 28.6275;
+    baseLng = 77.3725;
+  } else if (lower.includes('sector 50') || lower.includes('sector 76') || lower.includes('sector 75') || lower.includes('sector 78')) {
+    baseLat = 28.5680;
+    baseLng = 77.3750;
+  } else if (lower.includes('gurgaon') || lower.includes('gurugram')) {
+    baseLat = 28.4595;
+    baseLng = 77.0266;
+  } else if (lower.includes('delhi')) {
+    baseLat = 28.6353;
+    baseLng = 77.2250;
+  } else if (lower.includes('faridabad')) {
+    baseLat = 28.4089;
+    baseLng = 77.3178;
+  } else {
+    // Random residential NCR anchor safely away from Sector 142
+    baseLat = 28.5800 + (Math.random() - 0.5) * 0.06;
+    baseLng = 77.3400 + (Math.random() - 0.5) * 0.06;
+  }
+
+  const jitterLat = (Math.random() - 0.5) * 0.0006;
+  const jitterLng = (Math.random() - 0.5) * 0.0006;
+
+  return {
+    latitude: (baseLat + jitterLat).toFixed(7),
+    longitude: (baseLng + jitterLng).toFixed(7),
+  };
+}
+
+/**
  * Handle incoming WhatsApp commands with strict per-employee privacy and data isolation
  */
-async function handleCommand(from: string, commandText: string, senderName: string) {
+async function handleCommand(
+  from: string,
+  commandText: string,
+  senderName: string,
+  locationData?: WhatsAppLocationData
+) {
   if (!sock) return;
 
   const cmd = commandText.trim().toLowerCase();
@@ -264,6 +374,7 @@ async function handleCommand(from: string, commandText: string, senderName: stri
   // 0. CANCEL / ABORT / RESET / LOGOUT
   if (cmd === 'cancel' || cmd === 'abort' || cmd === 'reset' || cmd === 'logout') {
     pendingLogins.delete(from);
+    pendingSaturdayLocations.delete(from);
 
     // If logging out / unlinking active WhatsApp session
     if (cmd === 'logout' || cmd === 'reset') {
@@ -560,6 +671,164 @@ async function handleCommand(from: string, commandText: string, senderName: stri
     }
   }
 
+  // Pending Saturday Location Confirmation State
+  const pendingSat = pendingSaturdayLocations.get(from);
+  if (pendingSat && matchedEmp) {
+    if (cmd === 'skip' || cmd === 'cancel' || cmd === 'abort') {
+      pendingSaturdayLocations.delete(from);
+      await sock.sendMessage(from, {
+        text: `👍 Saturday location setup skipped. Saturday auto-punch remains active.\n\n👉 Share a *Location Pin 📎* anytime to update your Saturday location.`,
+      });
+      return;
+    }
+
+    if (cmd === 'ok' || cmd === 'keep') {
+      pendingSaturdayLocations.delete(from);
+      await sock.sendMessage(from, {
+        text: `✅ Current Saturday location retained.\n\n👉 Reply *status* to view your card.`,
+      });
+      return;
+    }
+
+    // 1. WhatsApp Location Pin received
+    if (locationData) {
+      const lat = locationData.latitude;
+      const lng = locationData.longitude;
+      const acc = locationData.accuracy || 15.0;
+
+      // Distance from Sector 142 Office check
+      if (getDistanceFromOfficeMeters(lat, lng) < 400) {
+        await sock.sendMessage(from, {
+          text:
+            `⚠️ *Office Location Detected!*\n\n` +
+            `The GPS pin you sent is at the office (Sector 142). Management requirement states Saturday location *must not* be the office address.\n\n` +
+            `Please share your *Home/Remote location pin (📎)* or reply with your home area address.`,
+        });
+        return;
+      }
+
+      const resolvedAddress = await resolveLocationAddress(
+        lat,
+        lng,
+        locationData.name,
+        locationData.address
+      );
+
+      const db = await getDatabase();
+      await db.collection('employees').updateOne(
+        { employeeId: matchedEmp.employeeId },
+        {
+          $set: {
+            saturdayLatitude: lat.toFixed(7),
+            saturdayLongitude: lng.toFixed(7),
+            saturdayGeoAccuracy: acc.toFixed(3),
+            saturdayGeoLocation: resolvedAddress,
+            updatedAt: new Date().toISOString(),
+          },
+        }
+      );
+      pendingSaturdayLocations.delete(from);
+
+      await sock.sendMessage(from, {
+        text:
+          `✅ *Saturday Location Saved from WhatsApp Pin!* 📍\n\n` +
+          `• *Location:* ${resolvedAddress}\n` +
+          `• *Coordinates:* ${lat.toFixed(6)}, ${lng.toFixed(6)}\n\n` +
+          `Your Saturday punches will strictly use this location instead of the office.\n\n` +
+          `👉 Reply *status* for today's summary or *sat off* to disable`,
+      });
+      return;
+    }
+
+    // 2. User replied with a text address
+    if (cmd && cmd !== '__location_pin__') {
+      const lower = commandText.trim().toLowerCase();
+      if (lower.includes('sector 142') || lower.includes('altf') || lower.includes('210-211')) {
+        await sock.sendMessage(from, {
+          text:
+            `⚠️ *Office Address Not Allowed!*\n\n` +
+            `Management requirement states Saturday location *must not* be the office address.\n\n` +
+            `Please share your *Home Location Pin (📎)* or reply with your home area address.`,
+        });
+        return;
+      }
+
+      const coords = getCoordinatesForAddress(commandText.trim());
+      const db = await getDatabase();
+      await db.collection('employees').updateOne(
+        { employeeId: matchedEmp.employeeId },
+        {
+          $set: {
+            saturdayLatitude: coords.latitude,
+            saturdayLongitude: coords.longitude,
+            saturdayGeoAccuracy: '15.000',
+            saturdayGeoLocation: commandText.trim(),
+            updatedAt: new Date().toISOString(),
+          },
+        }
+      );
+      pendingSaturdayLocations.delete(from);
+
+      await sock.sendMessage(from, {
+        text:
+          `✅ *Saturday Location Saved!* 📍\n\n` +
+          `• *Location:* ${commandText.trim()}\n` +
+          `• *Coordinates:* ${coords.latitude}, ${coords.longitude}\n\n` +
+          `Your Saturday punches will use this remote location instead of the office.\n\n` +
+          `👉 Reply *status* for card or *sat off* to disable`,
+      });
+      return;
+    }
+  }
+
+  // If matched employee sends a Location Pin anytime (outside pending state)
+  if (locationData && matchedEmp) {
+    const lat = locationData.latitude;
+    const lng = locationData.longitude;
+    const acc = locationData.accuracy || 15.0;
+
+    if (getDistanceFromOfficeMeters(lat, lng) < 400) {
+      await sock.sendMessage(from, {
+        text:
+          `⚠️ *Office Location Detected!*\n\n` +
+          `The GPS pin you sent is at the office (Sector 142). Saturday location *must not* be the office address.\n\n` +
+          `Please share your *Home/Remote location pin (📎)*.`,
+      });
+      return;
+    }
+
+    const resolvedAddress = await resolveLocationAddress(
+      lat,
+      lng,
+      locationData.name,
+      locationData.address
+    );
+
+    const db = await getDatabase();
+    await db.collection('employees').updateOne(
+      { employeeId: matchedEmp.employeeId },
+      {
+        $set: {
+          saturdayLatitude: lat.toFixed(7),
+          saturdayLongitude: lng.toFixed(7),
+          saturdayGeoAccuracy: acc.toFixed(3),
+          saturdayGeoLocation: resolvedAddress,
+          updatedAt: new Date().toISOString(),
+        },
+      }
+    );
+
+    await sock.sendMessage(from, {
+      text:
+        `📍 *Saturday Location Updated via GPS Pin!* ✅\n\n` +
+        `• *Location:* ${resolvedAddress}\n` +
+        `• *Coordinates:* ${lat.toFixed(6)}, ${lng.toFixed(6)}\n\n` +
+        `Saturday punches will use this pin instead of the office.\n\n` +
+        `👉 Reply *status* to view your card`,
+    });
+    return;
+  }
+
   // 3. HELP / MENU
   if (cmd === 'help' || cmd === 'menu' || cmd === 'commands' || cmd === 'cmd' || cmd === 'hi' || cmd === 'hello') {
     const userLine = matchedEmp
@@ -573,6 +842,7 @@ async function handleCommand(from: string, commandText: string, senderName: stri
       `• *status* – Today's punches\n` +
       `• *pause* / *resume* – Auto-pilot\n` +
       `• *sat on* / *sat off* – Saturday auto-punch\n` +
+      `• *sat loc* – View/update Saturday location\n` +
       `• *regularize* – Absent days\n` +
       `• *logs* – Recent punches\n` +
       `• *refresh* – Extend session\n` +
@@ -615,32 +885,46 @@ async function handleCommand(from: string, commandText: string, senderName: stri
     const inLog = todayLogs.find((l) => l.punchType === 'CHECK_IN');
     const outLog = todayLogs.find((l) => l.punchType === 'CHECK_OUT');
 
-    let inStr = '⏳ Scheduled';
+    const holidayCheck = await isHolidayToday(matchedEmp.employeeId, todayStr, matchedEmp);
+
+    let inStr = holidayCheck.isHoliday ? `🌴 Holiday (${holidayCheck.holidayName})` : '⏳ Scheduled';
     if (inLog) {
       inStr = `✅ ${formatISTDisplay(inLog.punchTime || inLog.executedAt)}`;
     } else if (matchedEmp.todayPunch?.checkInStatus === 'SUCCESS' && matchedEmp.todayPunch.checkedInAt) {
       inStr = `✅ ${formatISTDisplay(matchedEmp.todayPunch.checkedInAt)}`;
-    } else if (matchedEmp.todayPunch?.plannedCheckIn) {
+    } else if (matchedEmp.todayPunch?.plannedCheckIn && !holidayCheck.isHoliday) {
       inStr = `⏳ ${matchedEmp.todayPunch.plannedCheckIn}`;
     }
 
-    let outStr = '⏳ Scheduled';
+    let outStr = holidayCheck.isHoliday ? `🌴 Holiday (${holidayCheck.holidayName})` : '⏳ Scheduled';
     if (outLog) {
       outStr = `✅ ${formatISTDisplay(outLog.punchTime || outLog.executedAt)}`;
     } else if (matchedEmp.todayPunch?.checkOutStatus === 'SUCCESS' && matchedEmp.todayPunch.checkedOutAt) {
       outStr = `✅ ${formatISTDisplay(matchedEmp.todayPunch.checkedOutAt)}`;
-    } else if (matchedEmp.todayPunch?.plannedCheckOut) {
+    } else if (matchedEmp.todayPunch?.plannedCheckOut && !holidayCheck.isHoliday) {
       outStr = `⏳ ${matchedEmp.todayPunch.plannedCheckOut}`;
     }
 
     const isSatEnabled = (matchedEmp.schedule?.workingDays || [1, 2, 3, 4, 5]).includes(6);
+    const dayOfWeek = new Date(`${todayStr}T12:00:00+05:30`).getDay();
+    const isSaturday = dayOfWeek === 6;
+
+    const holidayLine = holidayCheck.isHoliday ? `• 🌴 Holiday: *${holidayCheck.holidayName}*\n` : '';
+    let locLine = `📍 Office: ${matchedEmp.geoLocation || 'Office'}\n`;
+    if (isSaturday && matchedEmp.saturdayGeoLocation) {
+      locLine = `📍 Today's Punch Location: *${matchedEmp.saturdayGeoLocation}* (Saturday Remote)\n`;
+    } else if (isSatEnabled) {
+      locLine += `📍 Saturday Remote: ${matchedEmp.saturdayGeoLocation ? `*${matchedEmp.saturdayGeoLocation}*` : '⚠️ _Not set (share pin 📎)_'}\n`;
+    }
+
     const statusMsg =
       `📊 *Status* (${todayStr})\n` +
+      holidayLine +
       `• In: ${inStr}\n` +
       `• Out: ${outStr}\n` +
       `• Saturday Auto-Punch: ${isSatEnabled ? '🟢 Enabled' : '⚪ Disabled'}\n` +
-      `📍 ${matchedEmp.geoLocation || 'Office'}\n\n` +
-      `👉 Reply *in* for Check-In, or *out* for Check-Out`;
+      locLine +
+      `\n👉 Reply *in* for Check-In, or *out* for Check-Out`;
 
     await sock.sendMessage(from, { text: statusMsg });
     return;
@@ -742,8 +1026,29 @@ async function handleCommand(from: string, commandText: string, senderName: stri
         },
       }
     );
-    const msg = `📅 *Saturday Auto-Punch: Enabled* for *${matchedEmp.name}*!\n\nAttendance will now automatically be marked on Saturdays too.\n\n👉 Reply *sat off* to disable or *status* for today's summary`;
-    await sock.sendMessage(from, { text: msg });
+
+    pendingSaturdayLocations.set(from, {
+      employeeId: matchedEmp.employeeId,
+      timestamp: Date.now(),
+    });
+
+    if (matchedEmp.saturdayGeoLocation) {
+      const msg =
+        `📅 *Saturday Auto-Punch: Enabled* for *${matchedEmp.name}*!\n\n` +
+        `📍 *Current Saturday Location:*\n_${matchedEmp.saturdayGeoLocation}_\n\n` +
+        `⚠️ *Requirement:* Saturday location *must not* be the office address.\n\n` +
+        `👉 Share a *Location Pin (📎)* to update it, or reply *ok* to keep this location.`;
+      await sock.sendMessage(from, { text: msg });
+    } else {
+      const msg =
+        `📅 *Saturday Auto-Punch: Enabled* for *${matchedEmp.name}*!\n\n` +
+        `⚠️ *Saturday Location Required:*\n` +
+        `Saturday punches *must not* show the office address.\n\n` +
+        `📍 *Please send your Saturday location now:*\n` +
+        `• 📌 Tap *📎* (or *+* on iPhone) ➔ *Location* ➔ *Send your current location* (from home)\n` +
+        `• OR reply with your *Home Area / Address* (e.g. \`Gaur City, Greater Noida\` or \`Indirapuram, Ghaziabad\`)`;
+      await sock.sendMessage(from, { text: msg });
+    }
     return;
   }
 
@@ -754,6 +1059,7 @@ async function handleCommand(from: string, commandText: string, senderName: stri
     cmd === 'disable saturday' ||
     cmd === 'sat punch off'
   ) {
+    pendingSaturdayLocations.delete(from);
     const currentDays = matchedEmp.schedule?.workingDays || [1, 2, 3, 4, 5];
     const newDays = currentDays.filter((d) => d !== 6);
     const db = await getDatabase();
@@ -768,6 +1074,65 @@ async function handleCommand(from: string, commandText: string, senderName: stri
     );
     const msg = `📅 *Saturday Auto-Punch: Disabled* for *${matchedEmp.name}*.\n\nAttendance will skip Saturdays (Mon–Fri only).\n\n👉 Reply *sat on* to enable or *status* for today's summary`;
     await sock.sendMessage(from, { text: msg });
+    return;
+  }
+
+  // 8c. VIEW OR SET SATURDAY LOCATION DIRECTLY
+  if (cmd === 'sat loc' || cmd === 'sat location' || cmd.startsWith('sat loc ') || cmd.startsWith('sat location ')) {
+    const rawLoc = commandText.replace(/^sat\s+(location|loc)\s*/i, '').trim();
+    if (!rawLoc) {
+      if (matchedEmp.saturdayGeoLocation) {
+        await sock.sendMessage(from, {
+          text:
+            `📍 *Saturday Location for ${matchedEmp.name}:*\n_${matchedEmp.saturdayGeoLocation}_\n\n` +
+            `• GPS: ${matchedEmp.saturdayLatitude || 'Auto'}, ${matchedEmp.saturdayLongitude || 'Auto'}\n\n` +
+            `👉 Share a *Location Pin 📎* or reply *sat loc <address>* to update.`,
+        });
+      } else {
+        pendingSaturdayLocations.set(from, { employeeId: matchedEmp.employeeId, timestamp: Date.now() });
+        await sock.sendMessage(from, {
+          text:
+            `📍 *No Saturday location set yet for ${matchedEmp.name}.*\n\n` +
+            `⚠️ Saturday location *must not* be the office address.\n\n` +
+            `Please share your location:\n` +
+            `• 📌 Tap *📎* ➔ *Location* to send GPS pin, OR\n` +
+            `• ✍️ Reply *sat loc <your home address>*`,
+        });
+      }
+      return;
+    }
+
+    const lower = rawLoc.toLowerCase();
+    if (lower.includes('sector 142') || lower.includes('altf') || lower.includes('210-211')) {
+      await sock.sendMessage(from, {
+        text: `⚠️ Saturday location cannot be the office address. Please provide your home/remote location.`,
+      });
+      return;
+    }
+
+    const coords = getCoordinatesForAddress(rawLoc);
+    const db = await getDatabase();
+    await db.collection('employees').updateOne(
+      { employeeId: matchedEmp.employeeId },
+      {
+        $set: {
+          saturdayLatitude: coords.latitude,
+          saturdayLongitude: coords.longitude,
+          saturdayGeoAccuracy: '15.000',
+          saturdayGeoLocation: rawLoc,
+          updatedAt: new Date().toISOString(),
+        },
+      }
+    );
+    pendingSaturdayLocations.delete(from);
+
+    await sock.sendMessage(from, {
+      text:
+        `✅ *Saturday Location Updated!* 📍\n\n` +
+        `• *Location:* ${rawLoc}\n` +
+        `• *Coordinates:* ${coords.latitude}, ${coords.longitude}\n\n` +
+        `Saturday punches will use this remote address instead of the office.`,
+    });
     return;
   }
 
@@ -1053,17 +1418,37 @@ export async function startWhatsAppBot() {
       const from = msg.key.remoteJid;
       if (!from) continue;
 
-      // Extract text content from various message types
-      const text =
+      // Extract text content or location message
+      const locMsg = msg.message?.locationMessage || msg.message?.liveLocationMessage;
+      let text =
         msg.message?.conversation ||
         msg.message?.extendedTextMessage?.text ||
         '';
 
-      if (!text) continue;
+      let locationData: WhatsAppLocationData | undefined;
+      if (
+        locMsg &&
+        typeof locMsg.degreesLatitude === 'number' &&
+        typeof locMsg.degreesLongitude === 'number'
+      ) {
+        const regularLoc = locMsg as { name?: string | null; address?: string | null; accuracyInMeters?: number | null };
+        locationData = {
+          latitude: locMsg.degreesLatitude,
+          longitude: locMsg.degreesLongitude,
+          name: regularLoc.name || undefined,
+          address: regularLoc.address || undefined,
+          accuracy: regularLoc.accuracyInMeters || undefined,
+        };
+        if (!text) {
+          text = '__LOCATION_PIN__';
+        }
+      }
+
+      if (!text && !locationData) continue;
 
       const senderName = msg.pushName || 'User';
       try {
-        await handleCommand(from, text, senderName);
+        await handleCommand(from, text, senderName, locationData);
       } catch (err) {
         console.error('[WhatsApp Bot] Error handling command:', err);
       }
