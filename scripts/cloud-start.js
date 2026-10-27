@@ -69,7 +69,7 @@ startWebServer();
 startWorker();
 
 // 3. Keep-Alive Pinger (Pings external URL to keep Render awake when active)
-const publicUrl = process.env.RENDER_EXTERNAL_URL || 'https://hrone-99rh.onrender.com';
+const publicUrl = process.env.RENDER_EXTERNAL_URL || 'https://hrone-ym8f.onrender.com';
 const PING_INTERVAL = 5 * 60 * 1000; // Every 5 minutes
 
 console.log(`[Keep-Alive] Initializing anti-sleep pinger for ${publicUrl}...`);

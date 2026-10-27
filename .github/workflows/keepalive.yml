@@ -12,7 +12,7 @@ jobs:
     steps:
       - name: Ping Render Service
         run: |
-          URL="https://hrone-99rh.onrender.com/"
+          URL="https://hrone-ym8f.onrender.com/"
           echo "Pinging $URL to keep Render awake..."
           HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$URL")
           echo "Render response: HTTP $HTTP_STATUS"
