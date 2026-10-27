@@ -269,6 +269,36 @@ export default function AttendanceDashboard() {
     }
   };
 
+  const handleCheckoutAll = async (force = false) => {
+    setActionLoading('checkout-all');
+    setFeedback(null);
+    try {
+      const res = await fetch('/api/employees/checkout-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ force }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setFeedback({
+          type: 'success',
+          message: data.message || 'All employees checked out successfully!',
+        });
+      } else {
+        setFeedback({
+          type: 'error',
+          message: data.message || data.error || 'Some check-outs failed.',
+        });
+      }
+      fetchData();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Bulk check-out failed';
+      setFeedback({ type: 'error', message: msg });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const handleRefreshToken = async (employeeId: number, forcePassword = false) => {
     const actionKey = `refresh-${employeeId}`;
     setActionLoading(actionKey);
@@ -558,6 +588,25 @@ export default function AttendanceDashboard() {
             >
               <Key className={`w-3.5 h-3.5 text-amber-400 ${actionLoading === 'login-all' ? 'animate-spin' : ''}`} />
               <span>{actionLoading === 'login-all' ? 'Logging in...' : 'Login All Users'}</span>
+            </button>
+
+            {/* Bulk Punch Out */}
+            <button
+              onClick={() => {
+                if (confirm('Are you sure you want to punch out all active employees pending checkout today?')) {
+                  handleCheckoutAll();
+                }
+              }}
+              disabled={actionLoading !== null}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-300 text-xs font-semibold shadow-sm shadow-rose-500/10 transition-all active:scale-95 disabled:opacity-50"
+              title="Punch OUT all active employees pending check-out today"
+            >
+              {actionLoading === 'checkout-all' ? (
+                <RotateCw className="w-3.5 h-3.5 animate-spin text-rose-400" />
+              ) : (
+                <LogOut className="w-3.5 h-3.5 text-rose-400" />
+              )}
+              <span>Punch Out All</span>
             </button>
 
             {/* Bulk Autopilot Controls */}

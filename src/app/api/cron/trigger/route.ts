@@ -81,7 +81,7 @@ async function handleCronTrigger(req: NextRequest) {
 
       if (action === 'checkin') {
         punchTypeToRun = 'CHECK_IN';
-      } else if (action === 'checkout') {
+      } else if (action === 'checkout' || action === 'checkout_all') {
         punchTypeToRun = 'CHECK_OUT';
       } else if (action === 'refresh_all') {
         const refreshResult = await refreshHROneToken(emp);
@@ -177,7 +177,7 @@ async function handleCronTrigger(req: NextRequest) {
             continue;
           }
 
-          if (!isTimeTriggerMatch(currentIstHHMM, todayPunch.plannedCheckOut || '19:30')) {
+          if (action !== 'checkout_all' && !isTimeTriggerMatch(currentIstHHMM, todayPunch.plannedCheckOut || '19:30')) {
             results.push({
               employeeId: emp.employeeId,
               name: emp.name,
