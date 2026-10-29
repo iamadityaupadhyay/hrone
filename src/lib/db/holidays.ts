@@ -22,7 +22,9 @@ export async function saveHolidays(employeeId: number, year: number, holidays: H
           year,
           date: h.date,
           holidayName: h.holidayName,
-          isRestrictedHoliday: h.isRestrictedHoliday || false,
+          isRestrictedHoliday: Boolean(h.isRestrictedHoliday),
+          isNationalHoliday: Boolean(h.isNationalHoliday),
+          dayName: h.dayName,
           description: h.description,
           raw: h.raw,
           updatedAt: new Date().toISOString(),
@@ -52,6 +54,8 @@ export async function getEmployeeHolidays(employeeId: number, year?: number): Pr
     date: doc.date,
     holidayName: doc.holidayName,
     isRestrictedHoliday: doc.isRestrictedHoliday,
+    isNationalHoliday: doc.isNationalHoliday,
+    dayName: doc.dayName,
     description: doc.description,
     raw: doc.raw,
     updatedAt: doc.updatedAt,
@@ -71,9 +75,13 @@ export async function isHolidayToday(
   const db = await getDatabase();
   const collection = db.collection(HOLIDAYS_COLLECTION);
 
-  // 1. Try finding an official holiday specifically for this employee
+  // 1. Try finding an official holiday specifically for this employee (excluding restricted/optional holidays)
   if (employeeId) {
-    const doc = await collection.findOne({ employeeId, date: targetDate });
+    const doc = await collection.findOne({
+      employeeId,
+      date: targetDate,
+      isRestrictedHoliday: { $ne: true },
+    });
     if (doc) {
       return {
         isHoliday: true,

@@ -7,6 +7,8 @@ export interface HolidayRecord {
   date: string; // "YYYY-MM-DD"
   holidayName: string;
   isRestrictedHoliday?: boolean;
+  isNationalHoliday?: boolean;
+  dayName?: string;
   description?: string;
   raw?: unknown;
   updatedAt: string;
@@ -115,13 +117,24 @@ export async function fetchHROneHolidays(
       }
 
       if (dateStr) {
+        const isRestricted = Boolean(
+          rec.isRestrictedHolidayApplicable === true ||
+          rec.isRestrictedHoliday === true ||
+          rec.isRestricted === true
+        );
+        const isNational = Boolean(rec.isNationalHoliday);
+        const dayName = rec.dayName ? String(rec.dayName) : undefined;
+        const description = rec.description || rec.remarks ? String(rec.description || rec.remarks) : undefined;
+
         holidays.push({
           employeeId: employee.employeeId,
           year: currentYear,
           date: dateStr,
           holidayName: name,
-          isRestrictedHoliday: Boolean(rec.isRestrictedHoliday || rec.isRestricted),
-          description: rec.description ? String(rec.description) : undefined,
+          isRestrictedHoliday: isRestricted,
+          isNationalHoliday: isNational,
+          dayName,
+          description,
           raw: item,
           updatedAt: now,
         });
