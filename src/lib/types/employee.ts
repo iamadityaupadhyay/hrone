@@ -44,6 +44,11 @@ export interface EmployeeProfile {
   lastCheckIn?: string;
   lastCheckOut?: string;
   todayPunch?: TodayPunchState;
+  isSuperAdmin?: boolean;
+  role?: 'SUPER_ADMIN' | 'ADMIN' | 'EMPLOYEE';
+  whatsappLid?: string;
+  whatsappJid?: string;
+  whatsappName?: string;
   createdAt: string;
   updatedAt: string;
 }

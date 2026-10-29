@@ -10,6 +10,12 @@ import { getDatabase } from '../lib/mongodb';
 import { EmployeeProfile } from '../lib/types/employee';
 import { isHolidayToday, syncAllActiveEmployeesHolidays } from '../lib/db/holidays';
 import { getWhatsAppBotStatus, resolveWhatsAppRecipient, sendBroadcast, sendWhatsAppNotification, startWhatsAppBot } from '../whatsapp/bot';
+import {
+  notifyHolidayAlert,
+  notifyPunchFailure,
+  notifyTokenRefreshFailure,
+  notifySystemError,
+} from '../lib/whatsapp/admin';
 
 async function runSchedulerTick() {
   const now = new Date();
@@ -37,6 +43,13 @@ async function runSchedulerTick() {
   const db = await getDatabase();
   const collection = db.collection('employees');
 
+  // Check company-wide official holiday for today (alerts Super Admin once per holiday)
+  const companyHoliday = await isHolidayToday(undefined, todayDateStr);
+  if (companyHoliday.isHoliday) {
+    console.log(`[Worker] Today (${todayDateStr}) is a company holiday: ${companyHoliday.holidayName}`);
+    await notifyHolidayAlert(companyHoliday.holidayName || 'Official Holiday', todayDateStr);
+  }
+
   for (const emp of activeEmployees) {
     // 1. Proactively refresh token if older than 24 hours
     const lastRefreshTime = emp.lastTokenRefresh ? new Date(emp.lastTokenRefresh).getTime() : 0;
@@ -49,6 +62,7 @@ async function runSchedulerTick() {
         console.log(`[Worker] Successfully refreshed token for ${emp.name}`);
       } else {
         console.warn(`[Worker] Token refresh failed for ${emp.name}:`, refreshResult.error);
+        await notifyTokenRefreshFailure(emp, refreshResult.error || 'Sliding token refresh failed');
       }
     }
 
@@ -61,6 +75,7 @@ async function runSchedulerTick() {
     // 2b. Check official holiday calendar (company-wide & employee-specific)
     const holidayCheck = await isHolidayToday(emp.employeeId, todayDateStr, emp);
     if (holidayCheck.isHoliday) {
+      await notifyHolidayAlert(holidayCheck.holidayName || 'Official Holiday', todayDateStr);
       continue;
     }
 
@@ -107,6 +122,11 @@ async function runSchedulerTick() {
       console.log(
         `[Worker] Check-In outcome for ${emp.name}: ${res.success ? 'SUCCESS' : 'FAILED'} (HTTP ${res.httpStatus})`
       );
+
+      if (!res.success) {
+        await notifyPunchFailure(emp, 'CHECK_IN', res.error || 'Check-In rejected by HROne', res.httpStatus);
+      }
+
       const recipient = resolveWhatsAppRecipient(emp);
 
       if (recipient) {
@@ -138,6 +158,10 @@ async function runSchedulerTick() {
       console.log(
         `[Worker] Check-Out outcome for ${emp.name}: ${res.success ? 'SUCCESS' : 'FAILED'} (HTTP ${res.httpStatus})`
       );
+
+      if (!res.success) {
+        await notifyPunchFailure(emp, 'CHECK_OUT', res.error || 'Check-Out rejected by HROne', res.httpStatus);
+      }
 
       const recipient = resolveWhatsAppRecipient(emp);
 
@@ -306,10 +330,12 @@ async function processPendingBroadcasts() {
 
   process.on('uncaughtException', (err) => {
     console.error('[Worker Process] Uncaught Exception:', err);
+    notifySystemError('Uncaught Exception', err).catch(() => {});
   });
 
   process.on('unhandledRejection', (reason) => {
     console.error('[Worker Process] Unhandled Rejection:', reason);
+    notifySystemError('Unhandled Rejection', String(reason)).catch(() => {});
   });
 
   process.on('SIGINT', cleanup);

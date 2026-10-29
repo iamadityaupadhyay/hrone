@@ -515,6 +515,17 @@ async function handleCommand(
     return false;
   });
 
+  if (!matchedEmp && from === '273095696904333@lid') {
+    matchedEmp = allEmployees.find((e) => e.employeeId === 2357);
+  }
+
+  const isSuperAdmin = Boolean(
+    matchedEmp?.isSuperAdmin ||
+    matchedEmp?.employeeId === 2357 ||
+    from === '273095696904333@lid' ||
+    (process.env.WHATSAPP_ADMIN_NUMBER && from.includes(process.env.WHATSAPP_ADMIN_NUMBER.replace(/\D/g, '')))
+  );
+
   // 2. LINK / REGISTER COMMAND: link <employeeId or username>
   if (cmd.startsWith('link ') || cmd.startsWith('register ')) {
     const query = cmd.replace(/^(link|register)\s+/, '').trim().toLowerCase();
@@ -832,8 +843,17 @@ async function handleCommand(
   // 3. HELP / MENU
   if (cmd === 'help' || cmd === 'menu' || cmd === 'commands' || cmd === 'cmd' || cmd === 'hi' || cmd === 'hello') {
     const userLine = matchedEmp
-      ? `👤 *${matchedEmp.name}* | Auto-Pilot: ${matchedEmp.schedule.active && matchedEmp.status === 'ACTIVE' ? '🟢' : '⏸️'}`
+      ? `👤 *${matchedEmp.name}* | ${isSuperAdmin ? '🛡️ *Super Admin*' : `Auto-Pilot: ${matchedEmp.schedule.active && matchedEmp.status === 'ACTIVE' ? '🟢' : '⏸️'}`}`
       : `🔒 *Not linked*`;
+
+    const adminSection = isSuperAdmin
+      ? `\n\n🛡️ *Super Admin Fleet Commands:*\n` +
+        `• *fleet* – Fleet status & live punch counts\n` +
+        `• *checkin all* – Check-In all pending employees\n` +
+        `• *checkout all* – Check-Out all pending employees\n` +
+        `• *admin errors* – View recent punch/system errors\n` +
+        `• *admin holidays* – View upcoming holidays`
+      : '';
 
     const helpMsg =
       `📋 *HROne Commands*\n` +
@@ -846,8 +866,9 @@ async function handleCommand(
       `• *regularize* – Absent days\n` +
       `• *logs* – Recent punches\n` +
       `• *refresh* – Extend session\n` +
-      `• *login* – Link account\n\n` +
-      `👉 Reply with any command (e.g. *status*, *in*, *out*)`;
+      `• *login* – Link account` +
+      adminSection +
+      `\n\n👉 Reply with any command (e.g. *status*, *in*, *out*${isSuperAdmin ? ', *fleet*' : ''})`;
 
     await sock.sendMessage(from, { text: helpMsg });
     return;
@@ -859,6 +880,187 @@ async function handleCommand(
     await sock.sendMessage(from, {
       text: `👋 Send your *HROne Employee Code* (e.g. *E1885*) to link your account:`,
     });
+    return;
+  }
+
+  // 3b. SUPER ADMIN FLEET COMMANDS (Aditya Upadhyay)
+  if (isSuperAdmin && (cmd === 'fleet' || cmd === 'admin' || cmd === 'admin status' || cmd === 'fleet status')) {
+    const db = await getDatabase();
+    const istTime = getISTPunchTime();
+    const todayStr = istTime.split('T')[0];
+    const allEmps = await getAllEmployees();
+    const active = allEmps.filter((e) => e.status === 'ACTIVE' && e.schedule.active);
+
+    const checkedInCount = active.filter(
+      (e) => e.todayPunch?.date === todayStr && e.todayPunch.checkInStatus === 'SUCCESS'
+    ).length;
+
+    const checkedOutCount = active.filter(
+      (e) => e.todayPunch?.date === todayStr && e.todayPunch.checkOutStatus === 'SUCCESS'
+    ).length;
+
+    const errorsCount = await db.collection('punch_logs').countDocuments({
+      $or: [
+        { punchTime: { $regex: `^${todayStr}` } },
+        { executedAt: { $gte: new Date(`${todayStr}T00:00:00.000Z`).toISOString() } },
+      ],
+      success: false,
+    });
+
+    const holidayCheck = await isHolidayToday(undefined, todayStr);
+    const holidayLine = holidayCheck.isHoliday ? `• 🌴 *Holiday Today:* ${holidayCheck.holidayName}\n` : '';
+
+    const text =
+      `🛡️ *Super Admin Fleet Console* 🚀\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n` +
+      `👥 Active Employees: *${active.length}*\n` +
+      `🟢 Checked In Today: *${checkedInCount}* / ${active.length}\n` +
+      `🔴 Checked Out Today: *${checkedOutCount}* / ${active.length}\n` +
+      `⏳ Pending Check-In: *${active.length - checkedInCount}*\n` +
+      `⏳ Pending Check-Out: *${active.length - checkedOutCount}*\n` +
+      `⚠️ Punch Errors Today: *${errorsCount}*\n` +
+      holidayLine +
+      `\n🔔 *Notification Subscriptions:* Active for Aditya Upadhyay\n` +
+      `• Holiday Alerts: ✅ ON\n` +
+      `• Punch Error Alerts: ✅ ON\n` +
+      `• Token Refresh Failures: ✅ ON\n` +
+      `• Worker Health Alerts: ✅ ON\n\n` +
+      `👉 Commands: *checkin all*, *checkout all*, *admin errors*, *holidays*`;
+
+    await sock.sendMessage(from, { text });
+    return;
+  }
+
+  // 3c. SUPER ADMIN: BATCH CHECK-IN ALL
+  if (isSuperAdmin && (cmd === 'checkin all' || cmd === 'punch in all' || cmd === 'admin checkin all' || cmd === 'check in all')) {
+    await sock.sendMessage(from, { text: `⏳ *Super Admin Action:* Triggering Check-In for all pending employees...` });
+    const allEmps = await getAllEmployees();
+    const active = allEmps.filter((e) => e.status === 'ACTIVE' && e.schedule.active);
+    const todayStr = getISTPunchTime().split('T')[0];
+    const pending = active.filter((e) => e.todayPunch?.date !== todayStr || e.todayPunch?.checkInStatus !== 'SUCCESS');
+
+    if (pending.length === 0) {
+      await sock.sendMessage(from, { text: `✅ All active employees are already checked in for today!` });
+      return;
+    }
+
+    let ok = 0;
+    let fail = 0;
+    for (const emp of pending) {
+      const res = await executePunch(emp, 'CHECK_IN', 'MANUAL');
+      if (res.success) ok++;
+      else fail++;
+      await new Promise((r) => setTimeout(r, 400));
+    }
+
+    await sock.sendMessage(from, {
+      text: `✅ *Batch Check-In Complete*\n━━━━━━━━━━━━━━━━━━━━\n• Succeeded: *${ok}*\n• Failed: *${fail}*\n• Total Pending: *${pending.length}*`,
+    });
+    return;
+  }
+
+  // 3d. SUPER ADMIN: BATCH CHECK-OUT ALL
+  if (isSuperAdmin && (cmd === 'checkout all' || cmd === 'punch out all' || cmd === 'admin checkout all' || cmd === 'check out all')) {
+    await sock.sendMessage(from, { text: `⏳ *Super Admin Action:* Triggering Check-Out for all pending employees...` });
+    const allEmps = await getAllEmployees();
+    const active = allEmps.filter((e) => e.status === 'ACTIVE' && e.schedule.active);
+    const todayStr = getISTPunchTime().split('T')[0];
+    const pending = active.filter((e) => e.todayPunch?.date !== todayStr || e.todayPunch?.checkOutStatus !== 'SUCCESS');
+
+    if (pending.length === 0) {
+      await sock.sendMessage(from, { text: `✅ All active employees are already checked out for today!` });
+      return;
+    }
+
+    let ok = 0;
+    let fail = 0;
+    for (const emp of pending) {
+      const res = await executePunch(emp, 'CHECK_OUT', 'MANUAL');
+      if (res.success) ok++;
+      else fail++;
+      await new Promise((r) => setTimeout(r, 400));
+    }
+
+    await sock.sendMessage(from, {
+      text: `✅ *Batch Check-Out Complete*\n━━━━━━━━━━━━━━━━━━━━\n• Succeeded: *${ok}*\n• Failed: *${fail}*\n• Total Pending: *${pending.length}*`,
+    });
+    return;
+  }
+
+  // 3e. SUPER ADMIN: ERRORS QUERY
+  if (isSuperAdmin && (cmd === 'admin errors' || cmd === 'errors' || cmd === 'error')) {
+    const db = await getDatabase();
+    const istTime = getISTPunchTime();
+    const todayStr = istTime.split('T')[0];
+
+    const recentErrors = await db
+      .collection('punch_logs')
+      .find({
+        $or: [
+          { punchTime: { $regex: `^${todayStr}` } },
+          { executedAt: { $gte: new Date(`${todayStr}T00:00:00.000Z`).toISOString() } },
+        ],
+        success: false,
+      })
+      .sort({ executedAt: -1 })
+      .limit(5)
+      .toArray();
+
+    if (recentErrors.length === 0) {
+      await sock.sendMessage(from, {
+        text: `✅ *No Errors Today!* (${todayStr})\n\nAll punches executed cleanly without failures.`,
+      });
+      return;
+    }
+
+    let errorMsg = `⚠️ *Recent Errors Today* (${todayStr})\n━━━━━━━━━━━━━━━━━━━━\n\n`;
+    recentErrors.forEach((errLog, idx) => {
+      errorMsg += `${idx + 1}. *${errLog.employeeName}* (ID: ${errLog.employeeId})\n`;
+      errorMsg += `• Action: *${errLog.punchType}*\n`;
+      errorMsg += `• Error: ${errLog.error || 'Server rejected punch'}\n`;
+      errorMsg += `• Time: ${formatISTDisplay(errLog.punchTime || errLog.executedAt)}\n\n`;
+    });
+
+    await sock.sendMessage(from, { text: errorMsg.trim() });
+    return;
+  }
+
+  // 3f. UPCOMING HOLIDAYS QUERY
+  if (cmd === 'admin holidays' || cmd === 'holidays' || cmd === 'holiday') {
+    const db = await getDatabase();
+    const istTime = getISTPunchTime();
+    const todayStr = istTime.split('T')[0];
+    const currentYear = new Date().getFullYear();
+
+    const upcoming = await db
+      .collection('holidays')
+      .find({
+        year: currentYear,
+        date: { $gte: todayStr },
+        isRestrictedHoliday: { $ne: true },
+      })
+      .sort({ date: 1 })
+      .limit(6)
+      .toArray();
+
+    if (upcoming.length === 0) {
+      await sock.sendMessage(from, {
+        text: `🌴 *Holiday Calendar*\n\nNo upcoming holidays found in database for ${currentYear}.`,
+      });
+      return;
+    }
+
+    let msg = `🌴 *Upcoming Official Holidays* (${currentYear})\n━━━━━━━━━━━━━━━━━━━━\n\n`;
+    upcoming.forEach((h, idx) => {
+      const dayName = new Intl.DateTimeFormat('en-US', {
+        weekday: 'short',
+        timeZone: 'Asia/Kolkata',
+      }).format(new Date(`${h.date}T12:00:00+05:30`));
+      msg += `${idx + 1}. *${h.holidayName}*\n📅 ${h.date} (${dayName})\n\n`;
+    });
+    msg += `Auto-punch will automatically pause on these dates.`;
+
+    await sock.sendMessage(from, { text: msg.trim() });
     return;
   }
 
@@ -924,8 +1126,10 @@ async function handleCommand(
       locLine += `📍 Saturday Remote: ${matchedEmp.saturdayGeoLocation ? `*${matchedEmp.saturdayGeoLocation}*` : '⚠️ _Not set (share pin 📎)_'}\n`;
     }
 
+    const adminBadge = isSuperAdmin ? `🛡️ *Role:* Super Admin\n` : '';
     const statusMsg =
       `📊 *Status* (${todayStr})\n` +
+      adminBadge +
       holidayLine +
       `• In: ${inStr}\n` +
       `• Out: ${outStr}\n` +

@@ -140,6 +140,18 @@ async function handleCheckinAll(req: NextRequest) {
       }
     }
 
+    if (failCount > 0) {
+      const { notifySuperAdmin } = await import('@/lib/whatsapp/admin');
+      await notifySuperAdmin(
+        `⚠️ *Batch Check-In encountered ${failCount} failure(s)*\n\n` +
+        `• Total Attempted: *${employees.length}*\n` +
+        `• Succeeded: *${successCount}*\n` +
+        `• Failed: *${failCount}*\n\n` +
+        `Failed: ${results.filter((r) => !r.success).map((r) => `${r.name} (${r.error || 'Failed'})`).join(', ')}`,
+        { alertType: 'PUNCH_FAILURE' }
+      ).catch(() => {});
+    }
+
     return NextResponse.json({
       success: failCount === 0,
       date: todayDateStr,
