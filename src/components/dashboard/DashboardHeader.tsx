@@ -36,7 +36,7 @@ export function DashboardHeader({
             <Clock className="w-4 h-4" />
           </div>
           <div className="flex items-center gap-2.5">
-            <h1 className="text-sm font-bold text-white tracking-tight">HROne Fleet</h1>
+            <h1 className="text-sm font-bold text-white tracking-tight">HROne Attendance</h1>
             <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/10 border border-emerald-500/25 text-emerald-400">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
               Auto-Pilot

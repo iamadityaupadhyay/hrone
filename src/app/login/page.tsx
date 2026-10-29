@@ -45,7 +45,7 @@ function LoginForm() {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       {error && (
-        <div className="p-3 rounded-xl bg-zinc-900 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2.5">
+        <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2.5">
           <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />
           <span>{error}</span>
         </div>
@@ -54,7 +54,7 @@ function LoginForm() {
       {/* Username / Employee ID Input */}
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-zinc-300 block">
-          Username or Employee ID
+          Username
         </label>
         <div className="relative">
           <User className="w-4 h-4 text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -64,8 +64,8 @@ function LoginForm() {
             autoFocus
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            placeholder="admin or Employee ID"
-            className="w-full bg-zinc-900/90 border border-zinc-800 rounded-xl pl-9 pr-4 py-2.5 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 transition-all font-mono"
+            placeholder="Enter username"
+            className="w-full bg-zinc-950/90 border border-zinc-800 rounded-xl pl-9 pr-4 py-2.5 text-xs text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-emerald-500/60 focus:ring-1 focus:ring-emerald-500/40 transition-all font-mono"
           />
         </div>
       </div>
@@ -83,7 +83,7 @@ function LoginForm() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="••••••••••••"
-            className="w-full bg-zinc-900/90 border border-zinc-800 rounded-xl pl-9 pr-10 py-2.5 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 transition-all font-mono"
+            className="w-full bg-zinc-950/90 border border-zinc-800 rounded-xl pl-9 pr-10 py-2.5 text-xs text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-emerald-500/60 focus:ring-1 focus:ring-emerald-500/40 transition-all font-mono"
           />
           <button
             type="button"
@@ -99,7 +99,7 @@ function LoginForm() {
       <button
         type="submit"
         disabled={loading}
-        className="w-full py-2.5 px-4 rounded-xl bg-white hover:bg-zinc-200 text-zinc-950 font-semibold text-xs transition-all active:scale-[0.99] disabled:opacity-50 flex items-center justify-center gap-2 mt-2 shadow-sm"
+        className="w-full py-2.5 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-semibold text-xs transition-all active:scale-[0.99] disabled:opacity-50 flex items-center justify-center gap-2 mt-2 shadow-sm"
       >
         {loading ? (
           <>
@@ -108,7 +108,7 @@ function LoginForm() {
           </>
         ) : (
           <>
-            <span>Sign in</span>
+            <span>Sign In</span>
             <ArrowRight className="w-3.5 h-3.5" />
           </>
         )}
@@ -119,33 +119,27 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex items-center justify-center p-4 selection:bg-zinc-800 selection:text-white">
       <div className="w-full max-w-sm space-y-6">
         {/* Brand Header */}
         <div className="text-center space-y-2">
-          <div className="inline-flex h-10 w-10 rounded-xl bg-zinc-900 border border-zinc-800 items-center justify-center text-zinc-200 shadow-sm mx-auto mb-1">
-            <Clock className="w-5 h-5 text-white" />
+          <div className="inline-flex h-11 w-11 rounded-xl bg-emerald-500/10 border border-emerald-500/25 items-center justify-center text-emerald-400 shadow-sm mx-auto mb-1">
+            <Clock className="w-5 h-5" />
           </div>
-          <h1 className="text-xl font-bold text-white tracking-tight">HROne Fleet Console</h1>
-          <p className="text-xs text-zinc-400">
-            Sign in to access attendance management
-          </p>
+          <div className="flex items-center justify-center gap-2">
+            <h1 className="text-xl font-bold text-white tracking-tight">HROne Attendance</h1>
+          </div>
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/10 border border-emerald-500/25 text-emerald-400">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            Auto-Pilot Engine Active
+          </div>
         </div>
 
         {/* Login Box */}
-        <div className="bg-zinc-900/60 border border-zinc-800/80 rounded-2xl p-6 sm:p-7 shadow-xl space-y-5">
+        <div className="bg-zinc-900/60 border border-zinc-800/80 rounded-2xl p-6 sm:p-7 shadow-2xl">
           <Suspense fallback={<div className="text-center py-6 text-xs text-zinc-500">Loading...</div>}>
             <LoginForm />
           </Suspense>
-
-          <div className="pt-4 border-t border-zinc-800/80 text-center space-y-1">
-            <div className="text-[11px] text-zinc-500">
-              Default access: <span className="font-mono text-zinc-300">admin</span> / <span className="font-mono text-zinc-300">hrone@123</span>
-            </div>
-            <div className="text-[10px] text-zinc-600">
-              Super Admins may also log in using their enrolled account password.
-            </div>
-          </div>
         </div>
       </div>
     </div>

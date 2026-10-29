@@ -137,9 +137,9 @@ export function MetricsCommandCenter({
 
       {/* Metric Tiles with Clean Progress Bars */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-3 border-t border-zinc-800/60 text-xs">
-        {/* Tile 1: Fleet */}
+        {/* Tile 1: Total Employees */}
         <div className="bg-zinc-950/50 border border-zinc-800/60 rounded-xl p-3 flex flex-col justify-between">
-          <span className="text-[11px] font-medium text-zinc-400 uppercase tracking-wider">Fleet Total</span>
+          <span className="text-[11px] font-medium text-zinc-400 uppercase tracking-wider">Total Employees</span>
           <div className="text-xl font-bold text-white mt-0.5 font-mono">{totalCount}</div>
           <div className="text-[11px] mt-1 flex items-center justify-between font-mono">
             <span className="text-emerald-400">{activeCount} active</span>
