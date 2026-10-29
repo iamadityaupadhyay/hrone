@@ -885,28 +885,35 @@ async function handleCommand(
     const inLog = todayLogs.find((l) => l.punchType === 'CHECK_IN');
     const outLog = todayLogs.find((l) => l.punchType === 'CHECK_OUT');
 
+    const isTodayRecord = matchedEmp.todayPunch?.date === todayStr;
     const holidayCheck = await isHolidayToday(matchedEmp.employeeId, todayStr, matchedEmp);
+    const dayOfWeek = new Date(`${todayStr}T12:00:00+05:30`).getDay();
+    const workingDays = matchedEmp.schedule?.workingDays || [1, 2, 3, 4, 5];
+    const isWorkingDay = workingDays.includes(dayOfWeek);
 
-    let inStr = holidayCheck.isHoliday ? `🌴 Holiday (${holidayCheck.holidayName})` : '⏳ Scheduled';
-    if (inLog) {
+    let inStr = '⏳ Not Punched In';
+    if (holidayCheck.isHoliday) {
+      inStr = `🌴 Holiday (${holidayCheck.holidayName})`;
+    } else if (!isWorkingDay) {
+      inStr = '🏖️ Weekly Off';
+    } else if (inLog) {
       inStr = `✅ ${formatISTDisplay(inLog.punchTime || inLog.executedAt)}`;
-    } else if (matchedEmp.todayPunch?.checkInStatus === 'SUCCESS' && matchedEmp.todayPunch.checkedInAt) {
+    } else if (isTodayRecord && matchedEmp.todayPunch?.checkInStatus === 'SUCCESS' && matchedEmp.todayPunch.checkedInAt) {
       inStr = `✅ ${formatISTDisplay(matchedEmp.todayPunch.checkedInAt)}`;
-    } else if (matchedEmp.todayPunch?.plannedCheckIn && !holidayCheck.isHoliday) {
-      inStr = `⏳ ${matchedEmp.todayPunch.plannedCheckIn}`;
     }
 
-    let outStr = holidayCheck.isHoliday ? `🌴 Holiday (${holidayCheck.holidayName})` : '⏳ Scheduled';
-    if (outLog) {
+    let outStr = '⏳ Not Punched Out';
+    if (holidayCheck.isHoliday) {
+      outStr = `🌴 Holiday (${holidayCheck.holidayName})`;
+    } else if (!isWorkingDay) {
+      outStr = '🏖️ Weekly Off';
+    } else if (outLog) {
       outStr = `✅ ${formatISTDisplay(outLog.punchTime || outLog.executedAt)}`;
-    } else if (matchedEmp.todayPunch?.checkOutStatus === 'SUCCESS' && matchedEmp.todayPunch.checkedOutAt) {
+    } else if (isTodayRecord && matchedEmp.todayPunch?.checkOutStatus === 'SUCCESS' && matchedEmp.todayPunch.checkedOutAt) {
       outStr = `✅ ${formatISTDisplay(matchedEmp.todayPunch.checkedOutAt)}`;
-    } else if (matchedEmp.todayPunch?.plannedCheckOut && !holidayCheck.isHoliday) {
-      outStr = `⏳ ${matchedEmp.todayPunch.plannedCheckOut}`;
     }
 
     const isSatEnabled = (matchedEmp.schedule?.workingDays || [1, 2, 3, 4, 5]).includes(6);
-    const dayOfWeek = new Date(`${todayStr}T12:00:00+05:30`).getDay();
     const isSaturday = dayOfWeek === 6;
 
     const holidayLine = holidayCheck.isHoliday ? `• 🌴 Holiday: *${holidayCheck.holidayName}*\n` : '';

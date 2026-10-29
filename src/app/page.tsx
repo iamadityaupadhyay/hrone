@@ -539,8 +539,26 @@ export default function AttendanceDashboard() {
     }
   };
 
+  const todayDateStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+
   const activeCount = employees.filter((e) => e.status === 'ACTIVE' && e.schedule.active).length;
   const satCount = employees.filter((e) => (e.schedule?.workingDays || [1, 2, 3, 4, 5]).includes(6)).length;
+
+  const checkedInTodayCount = employees.filter(
+    (e) => e.todayPunch?.date === todayDateStr && e.todayPunch?.checkInStatus === 'SUCCESS'
+  ).length;
+
+  const checkedOutTodayCount = employees.filter(
+    (e) => e.todayPunch?.date === todayDateStr && e.todayPunch?.checkOutStatus === 'SUCCESS'
+  ).length;
+
+  const pendingCheckInCount = employees.filter(
+    (e) => e.status === 'ACTIVE' && e.schedule.active && (!e.todayPunch || e.todayPunch.date !== todayDateStr || e.todayPunch.checkInStatus !== 'SUCCESS')
+  ).length;
+
+  const pendingCheckOutCount = employees.filter(
+    (e) => e.status === 'ACTIVE' && e.schedule.active && e.todayPunch?.date === todayDateStr && e.todayPunch?.checkInStatus === 'SUCCESS' && e.todayPunch?.checkOutStatus !== 'SUCCESS'
+  ).length;
 
   return (
     <div className="min-h-screen bg-[#090d16] text-slate-100 selection:bg-indigo-500 selection:text-white pb-16">
@@ -548,7 +566,7 @@ export default function AttendanceDashboard() {
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-5xl h-72 bg-gradient-to-b from-indigo-900/15 via-transparent to-transparent blur-3xl pointer-events-none -z-10" />
 
       {/* Clean Navbar */}
-      <header className="border-b border-slate-800/60 bg-slate-950/40 backdrop-blur-md sticky top-0 z-40">
+      <header className="border-b border-slate-800/60 bg-slate-950/70 backdrop-blur-md sticky top-0 z-40">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="h-9 w-9 rounded-xl bg-indigo-600 flex items-center justify-center shadow-md shadow-indigo-600/30">
@@ -559,13 +577,14 @@ export default function AttendanceDashboard() {
                 <h1 className="text-base font-bold text-white tracking-tight">HROne Attendance</h1>
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  Auto-Active
+                  Auto-Pilot
                 </span>
               </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5">
+          {/* Clean Navigation Utilities */}
+          <div className="flex items-center gap-2 sm:gap-2.5">
             <button
               onClick={() => setShowWhatsAppModal(true)}
               className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-semibold transition-all active:scale-95 ${
@@ -576,125 +595,43 @@ export default function AttendanceDashboard() {
               title="WhatsApp Attendance Bot"
             >
               <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
-              <span>WhatsApp Bot</span>
+              <span className="hidden sm:inline">WhatsApp Bot</span>
               {whatsAppStatus?.status === 'CONNECTED' && (
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
               )}
             </button>
+
             <button
               onClick={() => setShowBroadcastModal(true)}
               className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-violet-600/15 hover:bg-violet-600/25 border border-violet-500/30 text-violet-200 text-xs font-semibold shadow-sm transition-all active:scale-95"
               title="Broadcast Announcement to Employees via WhatsApp"
             >
               <Megaphone className="w-3.5 h-3.5 text-violet-400" />
-              <span>Broadcast</span>
+              <span className="hidden sm:inline">Broadcast</span>
             </button>
-            <button
-              onClick={() => fetchData()}
-              disabled={loading}
-              className="p-2 rounded-xl border border-slate-800 bg-slate-900/60 text-slate-400 hover:text-white transition-colors"
-              title="Refresh"
-            >
-              <RotateCw className={`w-4 h-4 ${loading ? 'animate-spin text-indigo-400' : ''}`} />
-            </button>
+
             <button
               onClick={() => setShowPasswordModal(true)}
               className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900/60 border border-slate-800 text-slate-300 hover:text-white hover:border-slate-700 text-xs font-semibold transition-all active:scale-95 relative"
               title="Manage Passwords"
             >
               <Lock className="w-3.5 h-3.5 text-indigo-400" />
-              <span>Passwords</span>
+              <span className="hidden sm:inline">Passwords</span>
               {employees.filter((e) => !e.password).length > 0 && (
                 <span className="px-1.5 py-0.5 text-[10px] bg-amber-500 text-slate-950 font-extrabold rounded-full animate-pulse">
                   {employees.filter((e) => !e.password).length}
                 </span>
               )}
             </button>
-            <button
-              onClick={() => handleLoginAll(true)}
-              disabled={actionLoading === 'login-all'}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 text-xs font-semibold transition-all active:scale-95 disabled:opacity-50"
-              title="Login/Re-authenticate all users with saved passwords"
-            >
-              <Key className={`w-3.5 h-3.5 text-amber-400 ${actionLoading === 'login-all' ? 'animate-spin' : ''}`} />
-              <span>{actionLoading === 'login-all' ? 'Logging in...' : 'Login All Users'}</span>
-            </button>
 
-            {/* Bulk Punch In */}
             <button
-              onClick={() => {
-                if (confirm('Are you sure you want to check in all active employees pending check-in today?')) {
-                  handleCheckinAll();
-                }
-              }}
-              disabled={actionLoading !== null}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-xs font-semibold shadow-sm shadow-emerald-500/10 transition-all active:scale-95 disabled:opacity-50"
-              title="Check IN all active employees pending check-in today"
+              onClick={() => fetchData()}
+              disabled={loading}
+              className="p-2 rounded-xl border border-slate-800 bg-slate-900/60 text-slate-400 hover:text-white transition-colors"
+              title="Refresh Dashboard"
             >
-              {actionLoading === 'checkin-all' ? (
-                <RotateCw className="w-3.5 h-3.5 animate-spin text-emerald-400" />
-              ) : (
-                <LogIn className="w-3.5 h-3.5 text-emerald-400" />
-              )}
-              <span>Check In All</span>
+              <RotateCw className={`w-4 h-4 ${loading ? 'animate-spin text-indigo-400' : ''}`} />
             </button>
-
-            {/* Bulk Punch Out */}
-            <button
-              onClick={() => {
-                if (confirm('Are you sure you want to punch out all active employees pending checkout today?')) {
-                  handleCheckoutAll();
-                }
-              }}
-              disabled={actionLoading !== null}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-300 text-xs font-semibold shadow-sm shadow-rose-500/10 transition-all active:scale-95 disabled:opacity-50"
-              title="Punch OUT all active employees pending check-out today"
-            >
-              {actionLoading === 'checkout-all' ? (
-                <RotateCw className="w-3.5 h-3.5 animate-spin text-rose-400" />
-              ) : (
-                <LogOut className="w-3.5 h-3.5 text-rose-400" />
-              )}
-              <span>Punch Out All</span>
-            </button>
-
-            {/* Bulk Autopilot Controls */}
-            <div className="flex items-center rounded-xl bg-slate-900/60 border border-slate-800 p-0.5">
-              <button
-                onClick={() => handleAutopilotAll('resume')}
-                disabled={actionLoading?.startsWith('autopilot-all')}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all active:scale-95 disabled:opacity-50 ${
-                  activeCount < employees.length
-                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/30 shadow-sm shadow-emerald-500/10'
-                    : 'text-slate-300 hover:text-emerald-300 hover:bg-emerald-500/10'
-                }`}
-                title="Resume autopilot for all employees"
-              >
-                {actionLoading === 'autopilot-all-resume' ? (
-                  <RotateCw className="w-3.5 h-3.5 animate-spin text-emerald-400" />
-                ) : (
-                  <Play className="w-3 h-3 fill-emerald-400 text-emerald-400" />
-                )}
-                <span>Resume All</span>
-              </button>
-              <button
-                onClick={() => {
-                  if (confirm('Are you sure you want to pause auto-pilot for all employees?')) {
-                    handleAutopilotAll('pause');
-                  }
-                }}
-                disabled={actionLoading?.startsWith('autopilot-all')}
-                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-rose-300 hover:bg-rose-500/10 transition-all active:scale-95 disabled:opacity-50"
-                title="Pause autopilot for all employees"
-              >
-                {actionLoading === 'autopilot-all-pause' ? (
-                  <RotateCw className="w-3.5 h-3.5 animate-spin text-rose-400" />
-                ) : (
-                  <Pause className="w-3 h-3 text-slate-400" />
-                )}
-                <span>Pause</span>
-              </button>
-            </div>
 
             <button
               onClick={() => setIsModalOpen(true)}
@@ -734,44 +671,175 @@ export default function AttendanceDashboard() {
           </div>
         )}
 
-        {/* Minimalist Summary Bar */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-slate-400 px-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <span>Enrolled: <strong className="text-white">{employees.length}</strong></span>
-            <span>•</span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-              Autopilot Active: <strong className="text-emerald-400">{activeCount}</strong>
-            </span>
-            {employees.length - activeCount > 0 && (
-              <>
-                <span>•</span>
-                <span className="flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-                  Paused: <strong className="text-amber-400">{employees.length - activeCount}</strong>
-                </span>
-              </>
-            )}
-            <span>•</span>
-            <span>Sat Auto: <strong className="text-amber-400">{satCount}</strong></span>
+        {/* ======================================================== */}
+        {/* DEDICATED OPERATIONS COMMAND CENTER                      */}
+        {/* ======================================================== */}
+        <div className="bg-slate-900/50 border border-slate-800/80 rounded-2xl p-4 sm:p-5 backdrop-blur-md space-y-4 shadow-xl shadow-black/20">
+          {/* Top Bar: Action Buttons Grouped Logically */}
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+            {/* Cluster 1: Daily Bulk Attendance */}
+            <div className="space-y-1.5">
+              <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                <Clock className="w-3 h-3 text-indigo-400" />
+                Bulk Attendance Actions
+              </span>
+              <div className="flex flex-wrap items-center gap-2.5">
+                {/* Bulk Check In */}
+                <button
+                  onClick={() => {
+                    if (confirm('Are you sure you want to check in all active employees pending check-in today?')) {
+                      handleCheckinAll();
+                    }
+                  }}
+                  disabled={actionLoading !== null}
+                  className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 text-xs font-semibold shadow-sm shadow-emerald-500/10 transition-all active:scale-95 disabled:opacity-50"
+                  title="Check IN all active employees pending check-in today"
+                >
+                  {actionLoading === 'checkin-all' ? (
+                    <RotateCw className="w-3.5 h-3.5 animate-spin text-emerald-400" />
+                  ) : (
+                    <LogIn className="w-3.5 h-3.5 text-emerald-400" />
+                  )}
+                  <span>Check In All</span>
+                  {pendingCheckInCount > 0 ? (
+                    <span className="px-1.5 py-0.2 text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold rounded-md">
+                      {pendingCheckInCount} pending
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-emerald-400/80 font-normal">✓ Done</span>
+                  )}
+                </button>
+
+                {/* Bulk Punch Out */}
+                <button
+                  onClick={() => {
+                    if (confirm('Are you sure you want to punch out all active employees pending checkout today?')) {
+                      handleCheckoutAll();
+                    }
+                  }}
+                  disabled={actionLoading !== null}
+                  className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 text-xs font-semibold shadow-sm shadow-rose-500/10 transition-all active:scale-95 disabled:opacity-50"
+                  title="Punch OUT all active employees pending check-out today"
+                >
+                  {actionLoading === 'checkout-all' ? (
+                    <RotateCw className="w-3.5 h-3.5 animate-spin text-rose-400" />
+                  ) : (
+                    <LogOut className="w-3.5 h-3.5 text-rose-400" />
+                  )}
+                  <span>Punch Out All</span>
+                  {pendingCheckOutCount > 0 ? (
+                    <span className="px-1.5 py-0.2 text-[10px] bg-rose-500/20 text-rose-300 border border-rose-500/30 font-bold rounded-md">
+                      {pendingCheckOutCount} pending
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-rose-400/80 font-normal">✓ Done</span>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* Cluster 2: Fleet Automation & Autopilot */}
+            <div className="space-y-1.5">
+              <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                <Sliders className="w-3 h-3 text-indigo-400" />
+                Fleet Automation
+              </span>
+              <div className="flex flex-wrap items-center gap-2.5">
+                {/* Login All Users */}
+                <button
+                  onClick={() => handleLoginAll(true)}
+                  disabled={actionLoading === 'login-all'}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 text-xs font-semibold transition-all active:scale-95 disabled:opacity-50"
+                  title="Login/Re-authenticate all users with saved passwords"
+                >
+                  <Key className={`w-3.5 h-3.5 text-amber-400 ${actionLoading === 'login-all' ? 'animate-spin' : ''}`} />
+                  <span>{actionLoading === 'login-all' ? 'Logging in...' : 'Login All Users'}</span>
+                </button>
+
+                {/* Autopilot Controls */}
+                <div className="flex items-center rounded-xl bg-slate-950/80 border border-slate-800 p-0.5">
+                  <button
+                    onClick={() => handleAutopilotAll('resume')}
+                    disabled={actionLoading?.startsWith('autopilot-all')}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all active:scale-95 disabled:opacity-50 ${
+                      activeCount < employees.length
+                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/30 shadow-sm'
+                        : 'text-slate-300 hover:text-emerald-300 hover:bg-emerald-500/10'
+                    }`}
+                    title="Resume autopilot for all employees"
+                  >
+                    {actionLoading === 'autopilot-all-resume' ? (
+                      <RotateCw className="w-3.5 h-3.5 animate-spin text-emerald-400" />
+                    ) : (
+                      <Play className="w-3 h-3 fill-emerald-400 text-emerald-400" />
+                    )}
+                    <span>Resume All</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (confirm('Are you sure you want to pause auto-pilot for all employees?')) {
+                        handleAutopilotAll('pause');
+                      }
+                    }}
+                    disabled={actionLoading?.startsWith('autopilot-all')}
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-rose-300 hover:bg-rose-500/10 transition-all active:scale-95 disabled:opacity-50"
+                    title="Pause autopilot for all employees"
+                  >
+                    {actionLoading === 'autopilot-all-pause' ? (
+                      <RotateCw className="w-3.5 h-3.5 animate-spin text-rose-400" />
+                    ) : (
+                      <Pause className="w-3 h-3 text-slate-400" />
+                    )}
+                    <span>Pause</span>
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
-          <div className="flex items-center gap-2.5">
-            {employees.length - activeCount > 0 && (
-              <button
-                onClick={() => handleAutopilotAll('resume')}
-                disabled={actionLoading?.startsWith('autopilot-all')}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 font-semibold text-xs transition-all active:scale-95"
-                title="Quickly resume all paused autopilots"
-              >
-                {actionLoading === 'autopilot-all-resume' ? (
-                  <RotateCw className="w-3 h-3 animate-spin text-emerald-400" />
-                ) : (
-                  <Play className="w-3 h-3 fill-emerald-400 text-emerald-400" />
-                )}
-                <span>Resume All ({employees.length - activeCount} paused)</span>
-              </button>
-            )}
-            <span>Today: <strong className="text-slate-200">{new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</strong></span>
+
+          {/* Bottom Row: Live Metric Cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-3 border-t border-slate-800/60">
+            {/* Stat 1: Total Enrolled */}
+            <div className="bg-slate-950/40 border border-slate-800/50 rounded-xl p-3">
+              <span className="text-[11px] font-medium text-slate-400">Total Enrolled</span>
+              <div className="text-lg font-bold text-white mt-0.5">{employees.length}</div>
+              <span className="text-[10px] text-slate-500">
+                {employees.length - activeCount > 0 ? `${employees.length - activeCount} paused` : '100% Active'}
+              </span>
+            </div>
+
+            {/* Stat 2: Check-In Progress */}
+            <div className="bg-slate-950/40 border border-slate-800/50 rounded-xl p-3">
+              <span className="text-[11px] font-medium text-slate-400">Checked In Today</span>
+              <div className="text-lg font-bold text-emerald-400 mt-0.5">
+                {checkedInTodayCount} <span className="text-xs font-normal text-slate-500">/ {employees.length}</span>
+              </div>
+              <span className="text-[10px] text-emerald-500/80">
+                {pendingCheckInCount === 0 ? 'All Completed ✓' : `${pendingCheckInCount} remaining`}
+              </span>
+            </div>
+
+            {/* Stat 3: Check-Out Progress */}
+            <div className="bg-slate-950/40 border border-slate-800/50 rounded-xl p-3">
+              <span className="text-[11px] font-medium text-slate-400">Checked Out Today</span>
+              <div className="text-lg font-bold text-rose-400 mt-0.5">
+                {checkedOutTodayCount} <span className="text-xs font-normal text-slate-500">/ {employees.length}</span>
+              </div>
+              <span className="text-[10px] text-slate-500">
+                {pendingCheckOutCount > 0 ? `${pendingCheckOutCount} pending` : 'Ready'}
+              </span>
+            </div>
+
+            {/* Stat 4: Date & Saturday */}
+            <div className="bg-slate-950/40 border border-slate-800/50 rounded-xl p-3">
+              <span className="text-[11px] font-medium text-slate-400">Today</span>
+              <div className="text-sm font-semibold text-slate-200 mt-0.5 truncate">
+                {new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+              </div>
+              <span className="text-[10px] text-amber-400">
+                Sat Auto: {satCount}
+              </span>
+            </div>
           </div>
         </div>
 
