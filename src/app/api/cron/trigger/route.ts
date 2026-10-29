@@ -79,7 +79,7 @@ async function handleCronTrigger(req: NextRequest) {
       // 2. Determine punch action
       let punchTypeToRun: 'CHECK_IN' | 'CHECK_OUT' | null = null;
 
-      if (action === 'checkin') {
+      if (action === 'checkin' || action === 'checkin_all') {
         punchTypeToRun = 'CHECK_IN';
       } else if (action === 'checkout' || action === 'checkout_all') {
         punchTypeToRun = 'CHECK_OUT';
@@ -155,7 +155,7 @@ async function handleCronTrigger(req: NextRequest) {
             continue;
           }
 
-          if (!isTimeTriggerMatch(currentIstHHMM, todayPunch.plannedCheckIn || '09:00')) {
+          if (action !== 'checkin_all' && !isTimeTriggerMatch(currentIstHHMM, todayPunch.plannedCheckIn || '09:00')) {
             results.push({
               employeeId: emp.employeeId,
               name: emp.name,
