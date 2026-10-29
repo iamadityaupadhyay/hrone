@@ -1,6 +1,8 @@
 import { getDatabase } from '@/lib/mongodb';
 import { resolveWhatsAppRecipient } from './recipient';
 import { getISTPunchTime } from '../hrone/punch';
+import { getAllEmployees } from '../db/employees';
+import { isHolidayToday } from '../db/holidays';
 
 export interface SuperAdminInfo {
   name: string;
@@ -8,7 +10,7 @@ export interface SuperAdminInfo {
   recipientJid: string;
 }
 
-export type AlertType = 'HOLIDAY' | 'PUNCH_FAILURE' | 'TOKEN_FAILURE' | 'SYSTEM' | 'INFO';
+export type AlertType = 'HOLIDAY' | 'PUNCH_FAILURE' | 'TOKEN_FAILURE' | 'SYSTEM' | 'DAILY_SUMMARY' | 'INFO';
 
 export interface NotifyOptions {
   alertType?: AlertType;
@@ -107,6 +109,10 @@ export async function notifySuperAdmin(
     case 'SYSTEM':
       headerIcon = '🚨';
       headerTitle = 'SYSTEM ERROR ALERT';
+      break;
+    case 'DAILY_SUMMARY':
+      headerIcon = '📊';
+      headerTitle = 'DAILY ATTENDANCE RECAP';
       break;
     case 'INFO':
     default:
@@ -245,5 +251,125 @@ export async function notifySystemError(source: string, error: Error | string): 
     alertType: 'SYSTEM',
     urgent: true,
     throttleMinutes: 10,
+  });
+}
+
+/**
+ * Generate formatted text recap of daily fleet check-ins and check-outs
+ */
+export async function generateDailyAttendanceSummary(targetDateStr?: string): Promise<{
+  text: string;
+  totalActive: number;
+  checkedInCount: number;
+  checkedOutCount: number;
+  pendingInNames: string[];
+  pendingOutNames: string[];
+  errorsCount: number;
+}> {
+  const istTime = getISTPunchTime();
+  const todayStr = targetDateStr || istTime.split('T')[0];
+  const db = await getDatabase();
+  const allEmps = await getAllEmployees();
+  const active = allEmps.filter((e) => e.status === 'ACTIVE' && e.schedule.active);
+
+  const checkedIn = active.filter(
+    (e) => e.todayPunch?.date === todayStr && e.todayPunch.checkInStatus === 'SUCCESS'
+  );
+  const checkedOut = active.filter(
+    (e) => e.todayPunch?.date === todayStr && e.todayPunch.checkOutStatus === 'SUCCESS'
+  );
+
+  const pendingIn = active.filter(
+    (e) => e.todayPunch?.date !== todayStr || e.todayPunch?.checkInStatus !== 'SUCCESS'
+  );
+  const pendingOut = active.filter(
+    (e) => e.todayPunch?.date !== todayStr || e.todayPunch?.checkOutStatus !== 'SUCCESS'
+  );
+
+  const errorsCount = await db.collection('punch_logs').countDocuments({
+    $or: [
+      { punchTime: { $regex: `^${todayStr}` } },
+      { executedAt: { $gte: new Date(`${todayStr}T00:00:00.000Z`).toISOString() } },
+    ],
+    success: false,
+  });
+
+  const holidayCheck = await isHolidayToday(undefined, todayStr);
+  const holidayNote = holidayCheck.isHoliday ? `🌴 *Holiday Note:* Today was an official holiday (*${holidayCheck.holidayName}*)\n\n` : '';
+
+  const dayName = new Intl.DateTimeFormat('en-US', {
+    weekday: 'long',
+    timeZone: 'Asia/Kolkata',
+  }).format(new Date(`${todayStr}T12:00:00+05:30`));
+
+  const checkInPct = active.length > 0 ? Math.round((checkedIn.length / active.length) * 100) : 0;
+  const checkOutPct = active.length > 0 ? Math.round((checkedOut.length / active.length) * 100) : 0;
+
+  let text =
+    `📊 *Daily Fleet Attendance Recap*\n` +
+    `📅 *${todayStr}* (${dayName}) | ⏰ *11:00 PM IST*\n` +
+    `━━━━━━━━━━━━━━━━━━━━\n\n` +
+    holidayNote +
+    `👥 *Total Fleet (Autopilot):* *${active.length}* employees\n` +
+    `🟢 *Checked In:* *${checkedIn.length}* / ${active.length} (${checkInPct}%)\n` +
+    `🔴 *Checked Out:* *${checkedOut.length}* / ${active.length} (${checkOutPct}%)\n` +
+    `⚠️ *Punch Errors Today:* *${errorsCount}*\n\n`;
+
+  if (pendingIn.length > 0) {
+    const list = pendingIn.slice(0, 5).map((e) => `• ${e.name} (ID: ${e.employeeId})`).join('\n');
+    text += `⏳ *Missed Check-In (${pendingIn.length}):*\n${list}${pendingIn.length > 5 ? `\n• ...+${pendingIn.length - 5} more` : ''}\n\n`;
+  } else {
+    text += `✅ *Check-In:* 100% of active employees checked in!\n\n`;
+  }
+
+  if (pendingOut.length > 0) {
+    const list = pendingOut.slice(0, 5).map((e) => `• ${e.name} (ID: ${e.employeeId})`).join('\n');
+    text += `⏳ *Missed Check-Out (${pendingOut.length}):*\n${list}${pendingOut.length > 5 ? `\n• ...+${pendingOut.length - 5} more` : ''}\n\n`;
+  } else {
+    text += `✅ *Check-Out:* 100% of active employees checked out!\n\n`;
+  }
+
+  text += `👉 Send *pending in*, *pending out*, or *fleet* for details.`;
+
+  return {
+    text,
+    totalActive: active.length,
+    checkedInCount: checkedIn.length,
+    checkedOutCount: checkedOut.length,
+    pendingInNames: pendingIn.map((e) => e.name),
+    pendingOutNames: pendingOut.map((e) => e.name),
+    errorsCount,
+  };
+}
+
+/**
+ * Send the 11:00 PM IST daily attendance recap to Super Admin
+ */
+export async function sendDailyAttendanceSummary(targetDateStr?: string, force = false): Promise<boolean> {
+  const istTime = getISTPunchTime();
+  const todayStr = targetDateStr || istTime.split('T')[0];
+  const dedupKey = `DAILY_SUMMARY_${todayStr}`;
+
+  if (!force) {
+    try {
+      const db = await getDatabase();
+      const existing = await db.collection('admin_alerts').findOne({
+        alertType: 'DAILY_SUMMARY',
+        timeIST: { $regex: `^${todayStr}` },
+      });
+      if (existing) {
+        console.log(`[Admin Notify] Daily summary for ${todayStr} was already sent today.`);
+        return false;
+      }
+    } catch (err) {
+      console.warn('[Admin Notify] DB check error for daily summary deduplication:', err);
+    }
+  }
+
+  const { text } = await generateDailyAttendanceSummary(todayStr);
+  return notifySuperAdmin(text, {
+    alertType: 'DAILY_SUMMARY',
+    dedupKey,
+    throttleMinutes: force ? 0 : 60 * 12,
   });
 }

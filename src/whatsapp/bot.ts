@@ -12,7 +12,9 @@ import pino from 'pino';
 import path from 'path';
 import fs from 'fs';
 import { getAllEmployees } from '../lib/db/employees';
-import { isHolidayToday } from '../lib/db/holidays';
+import { isHolidayToday, syncAllActiveEmployeesHolidays } from '../lib/db/holidays';
+import { generateDailyAttendanceSummary } from '../lib/whatsapp/admin';
+import { resolveWhatsAppRecipient } from '../lib/whatsapp/recipient';
 import { loginWithHROne } from '../lib/hrone/auth';
 import { executePunch, getISTPunchTime } from '../lib/hrone/punch';
 import { refreshHROneToken } from '../lib/hrone/token';
@@ -848,11 +850,18 @@ async function handleCommand(
 
     const adminSection = isSuperAdmin
       ? `\n\n🛡️ *Super Admin Fleet Commands:*\n` +
-        `• *fleet* – Fleet status & live punch counts\n` +
+        `• *fleet* – Fleet status & live counts\n` +
+        `• *stats* – 11 PM attendance summary\n` +
+        `• *pending in* – Employees who missed check-in\n` +
+        `• *pending out* – Employees who missed check-out\n` +
         `• *checkin all* – Check-In all pending employees\n` +
         `• *checkout all* – Check-Out all pending employees\n` +
+        `• *refresh all* – Refresh sliding tokens for all\n` +
+        `• *sync holidays* – Pull latest calendar from HROne\n` +
         `• *admin errors* – View recent punch/system errors\n` +
-        `• *admin holidays* – View upcoming holidays`
+        `• *admin holidays* – Distinct upcoming holidays\n` +
+        `• *broadcast <msg>* – Announce to all employees\n` +
+        `• *autopilot on all* / *off all* – Fleet toggle`
       : '';
 
     const helpMsg =
@@ -1025,8 +1034,8 @@ async function handleCommand(
     return;
   }
 
-  // 3f. UPCOMING HOLIDAYS QUERY
-  if (cmd === 'admin holidays' || cmd === 'holidays' || cmd === 'holiday') {
+  // 3f. UPCOMING HOLIDAYS QUERY (Deduplicated distinct company-wide list)
+  if (cmd === 'admin holidays' || cmd === 'holidays' || cmd === 'holiday' || cmd === 'holiday list') {
     const db = await getDatabase();
     const istTime = getISTPunchTime();
     const todayStr = istTime.split('T')[0];
@@ -1034,18 +1043,30 @@ async function handleCommand(
 
     const upcoming = await db
       .collection('holidays')
-      .find({
-        year: currentYear,
-        date: { $gte: todayStr },
-        isRestrictedHoliday: { $ne: true },
-      })
-      .sort({ date: 1 })
-      .limit(6)
+      .aggregate([
+        {
+          $match: {
+            year: currentYear,
+            date: { $gte: todayStr },
+            isRestrictedHoliday: { $ne: true },
+          },
+        },
+        {
+          $group: {
+            _id: '$date',
+            holidayName: { $first: '$holidayName' },
+            date: { $first: '$date' },
+            isNationalHoliday: { $first: '$isNationalHoliday' },
+          },
+        },
+        { $sort: { date: 1 } },
+        { $limit: 10 },
+      ])
       .toArray();
 
     if (upcoming.length === 0) {
       await sock.sendMessage(from, {
-        text: `🌴 *Holiday Calendar*\n\nNo upcoming holidays found in database for ${currentYear}.`,
+        text: `🌴 *Holiday Calendar*\n\nNo upcoming official holidays found in database for ${currentYear}.`,
       });
       return;
     }
@@ -1056,11 +1077,224 @@ async function handleCommand(
         weekday: 'short',
         timeZone: 'Asia/Kolkata',
       }).format(new Date(`${h.date}T12:00:00+05:30`));
-      msg += `${idx + 1}. *${h.holidayName}*\n📅 ${h.date} (${dayName})\n\n`;
+      const nationalBadge = h.isNationalHoliday ? ' 🇮🇳 *(National)*' : '';
+      msg += `${idx + 1}. *${h.holidayName}*${nationalBadge}\n📅 ${h.date} (${dayName})\n\n`;
     });
-    msg += `Auto-punch will automatically pause on these dates.`;
+    msg += `Automated check-ins and check-outs will automatically pause on these dates.`;
 
     await sock.sendMessage(from, { text: msg.trim() });
+    return;
+  }
+
+  // 3g. SUPER ADMIN: DAILY ATTENDANCE SUMMARY (11 PM Recap on demand)
+  if (isSuperAdmin && (cmd === 'stats' || cmd === 'summary' || cmd === 'daily summary' || cmd === 'admin stats' || cmd === 'recap')) {
+    const { text } = await generateDailyAttendanceSummary();
+    await sock.sendMessage(from, { text });
+    return;
+  }
+
+  // 3h. SUPER ADMIN: PENDING CHECK-IN LIST
+  if (isSuperAdmin && (cmd === 'pending in' || cmd === 'who is pending in' || cmd === 'missed in' || cmd === 'pending checkin')) {
+    const allEmps = await getAllEmployees();
+    const active = allEmps.filter((e) => e.status === 'ACTIVE' && e.schedule.active);
+    const todayStr = getISTPunchTime().split('T')[0];
+    const pending = active.filter((e) => e.todayPunch?.date !== todayStr || e.todayPunch?.checkInStatus !== 'SUCCESS');
+
+    if (pending.length === 0) {
+      await sock.sendMessage(from, {
+        text: `✅ *Check-In Status:*\n\nAll ${active.length} active employees have successfully checked in for today!`,
+      });
+      return;
+    }
+
+    let msg = `⏳ *Employees Pending Check-In* (${pending.length}/${active.length})\n━━━━━━━━━━━━━━━━━━━━\n\n`;
+    pending.forEach((e, idx) => {
+      msg += `${idx + 1}. *${e.name}* (ID: ${e.employeeId})\n`;
+      msg += `• Planned: ${e.todayPunch?.plannedCheckIn || 'Pending assignment'}\n`;
+      msg += `• Mobile: ${e.mobileNumber || e.username || 'N/A'}\n\n`;
+    });
+    msg += `👉 Reply *checkin all* to punch them all in now.`;
+
+    await sock.sendMessage(from, { text: msg.trim() });
+    return;
+  }
+
+  // 3i. SUPER ADMIN: PENDING CHECK-OUT LIST
+  if (isSuperAdmin && (cmd === 'pending out' || cmd === 'who is pending out' || cmd === 'missed out' || cmd === 'pending checkout')) {
+    const allEmps = await getAllEmployees();
+    const active = allEmps.filter((e) => e.status === 'ACTIVE' && e.schedule.active);
+    const todayStr = getISTPunchTime().split('T')[0];
+    const pending = active.filter((e) => e.todayPunch?.date !== todayStr || e.todayPunch?.checkOutStatus !== 'SUCCESS');
+
+    if (pending.length === 0) {
+      await sock.sendMessage(from, {
+        text: `✅ *Check-Out Status:*\n\nAll ${active.length} active employees have successfully checked out for today!`,
+      });
+      return;
+    }
+
+    let msg = `⏳ *Employees Pending Check-Out* (${pending.length}/${active.length})\n━━━━━━━━━━━━━━━━━━━━\n\n`;
+    pending.forEach((e, idx) => {
+      msg += `${idx + 1}. *${e.name}* (ID: ${e.employeeId})\n`;
+      msg += `• In Status: ${e.todayPunch?.checkInStatus === 'SUCCESS' ? '🟢 Checked In' : '⚪ Not Checked In'}\n`;
+      msg += `• Planned Out: ${e.todayPunch?.plannedCheckOut || 'Pending assignment'}\n\n`;
+    });
+    msg += `👉 Reply *checkout all* to punch them all out now.`;
+
+    await sock.sendMessage(from, { text: msg.trim() });
+    return;
+  }
+
+  // 3j. SUPER ADMIN: SYNC HOLIDAYS FROM HRONE
+  if (isSuperAdmin && (cmd === 'sync holidays' || cmd === 'admin sync holidays' || cmd === 'refresh holidays')) {
+    await sock.sendMessage(from, {
+      text: `🔄 *Super Admin Action:* Syncing official holiday calendars from HROne cloud API...`,
+    });
+    const allEmps = await getAllEmployees();
+    const active = allEmps.filter((e) => e.status === 'ACTIVE');
+    const res = await syncAllActiveEmployeesHolidays(active);
+    await sock.sendMessage(from, {
+      text: `✅ *Holiday Sync Complete*\n━━━━━━━━━━━━━━━━━━━━\n• Synced Records: *${res.totalSynced}*\n• Employees Processed: *${active.length}*${res.errors.length ? `\n• Errors: ${res.errors.length}` : ''}\n\n👉 Send *holidays* to view the updated list.`,
+    });
+    return;
+  }
+
+  // 3k. SUPER ADMIN: REFRESH ALL TOKENS
+  if (isSuperAdmin && (cmd === 'refresh all' || cmd === 'admin refresh all' || cmd === 'refresh fleet')) {
+    await sock.sendMessage(from, {
+      text: `🔄 *Super Admin Action:* Refreshing sliding session tokens for all active employees...`,
+    });
+    const allEmps = await getAllEmployees();
+    const active = allEmps.filter((e) => e.status === 'ACTIVE');
+    let ok = 0;
+    let fail = 0;
+    for (const emp of active) {
+      const res = await refreshHROneToken(emp);
+      if (res.success) ok++;
+      else fail++;
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    await sock.sendMessage(from, {
+      text: `✅ *Fleet Token Refresh Complete*\n━━━━━━━━━━━━━━━━━━━━\n• Succeeded: *${ok}*\n• Failed: *${fail}*\n• Total Active: *${active.length}*`,
+    });
+    return;
+  }
+
+  // 3l. SUPER ADMIN: FLEET AUTOPILOT TOGGLE
+  if (
+    isSuperAdmin &&
+    (cmd === 'autopilot on all' ||
+      cmd === 'autopilot resume all' ||
+      cmd === 'autopilot off all' ||
+      cmd === 'autopilot pause all')
+  ) {
+    const activate = cmd.includes('on') || cmd.includes('resume');
+    const db = await getDatabase();
+    const res = await db.collection('employees').updateMany(
+      { status: 'ACTIVE' },
+      { $set: { 'schedule.active': activate, updatedAt: new Date().toISOString() } }
+    );
+    await sock.sendMessage(from, {
+      text: `${activate ? '🟢' : '⏸️'} *Fleet Autopilot Updated*\n━━━━━━━━━━━━━━━━━━━━\nAutopilot has been *${activate ? 'RESUMED' : 'PAUSED'}* for all *${res.modifiedCount}* active employees.`,
+    });
+    return;
+  }
+
+  // 3m. SUPER ADMIN: BROADCAST COMMAND
+  if (
+    isSuperAdmin &&
+    (cmd.startsWith('broadcast') || cmd.startsWith('bc ') || cmd.startsWith('announce '))
+  ) {
+    let broadcastContent = commandText.replace(/^(broadcast|bc|announce)\s*/i, '').trim();
+
+    if (!broadcastContent) {
+      await sock.sendMessage(from, {
+        text:
+          `📢 *Super Admin Broadcast*\n━━━━━━━━━━━━━━━━━━━━\n\n` +
+          `Send an announcement directly to employees on WhatsApp:\n\n` +
+          `👉 *Usage:*\n` +
+          `• *broadcast <your message>*\n  _Example: broadcast Team, tomorrow is a work-from-home day!_\n\n` +
+          `• *broadcast active <your message>*\n  _Sends only to employees with active autopilot._`,
+      });
+      return;
+    }
+
+    const onlyActive = broadcastContent.toLowerCase().startsWith('active ');
+    if (onlyActive) {
+      broadcastContent = broadcastContent.replace(/^active\s+/i, '').trim();
+    }
+
+    const allEmps = await getAllEmployees();
+    const targetEmployees = onlyActive
+      ? allEmps.filter((e) => e.status === 'ACTIVE' && e.schedule.active)
+      : allEmps.filter((e) => e.status === 'ACTIVE');
+
+    const jidSet = new Set<string>();
+    const recipients: BroadcastRecipient[] = [];
+
+    for (const emp of targetEmployees) {
+      const jid = resolveWhatsAppRecipient(emp);
+      if (jid && !jidSet.has(jid)) {
+        jidSet.add(jid);
+        recipients.push({
+          employeeId: String(emp.employeeId),
+          name: emp.name,
+          jid,
+        });
+      }
+    }
+
+    if (recipients.length === 0) {
+      await sock.sendMessage(from, {
+        text: `⚠️ No reachable WhatsApp contacts found among target employees.`,
+      });
+      return;
+    }
+
+    await sock.sendMessage(from, {
+      text:
+        `📢 *Super Admin Broadcast Initiated*\n━━━━━━━━━━━━━━━━━━━━\n` +
+        `👥 Audience: *${recipients.length}* employees\n` +
+        `⏳ Dispatching messages now...`,
+    });
+
+    const formattedAnnouncement =
+      `📢 *ANNOUNCEMENT FROM MANAGEMENT* 📢\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `${broadcastContent}\n\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n` +
+      `_Sent by Nora Fatehi_`;
+
+    const { sentCount, failedCount, results } = await sendBroadcast(formattedAnnouncement, recipients);
+
+    // Save to MongoDB broadcasts collection for record keeping and web dashboard view
+    try {
+      const db = await getDatabase();
+      await db.collection('broadcasts').insertOne({
+        message: broadcastContent,
+        target: onlyActive ? 'active' : 'all',
+        totalRecipients: recipients.length,
+        sentCount,
+        failedCount,
+        status: 'COMPLETED',
+        source: 'WHATSAPP_BOT',
+        senderEmployeeId: matchedEmp?.employeeId || 2357,
+        senderName: 'Nora Fatehi',
+        createdAt: new Date().toISOString(),
+        completedAt: new Date().toISOString(),
+        results,
+      });
+    } catch (dbErr) {
+      console.warn('[Broadcast] Failed to save record to DB:', dbErr);
+    }
+
+    await sock.sendMessage(from, {
+      text:
+        `✅ *Broadcast Complete!*\n━━━━━━━━━━━━━━━━━━━━\n` +
+        `• 🟢 Delivered: *${sentCount}* / ${recipients.length}\n` +
+        `• 🔴 Failed: *${failedCount}*\n` +
+        `• 👥 Total Audience: *${recipients.length}* employees`,
+    });
     return;
   }
 

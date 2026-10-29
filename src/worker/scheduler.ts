@@ -15,6 +15,7 @@ import {
   notifyPunchFailure,
   notifyTokenRefreshFailure,
   notifySystemError,
+  sendDailyAttendanceSummary,
 } from '../lib/whatsapp/admin';
 
 async function runSchedulerTick() {
@@ -48,6 +49,15 @@ async function runSchedulerTick() {
   if (companyHoliday.isHoliday) {
     console.log(`[Worker] Today (${todayDateStr}) is a company holiday: ${companyHoliday.holidayName}`);
     await notifyHolidayAlert(companyHoliday.holidayName || 'Official Holiday', todayDateStr);
+  }
+
+  // 11:00 PM IST Daily Attendance Recap for Super Admin
+  if (currentIstTime >= '23:00') {
+    try {
+      await sendDailyAttendanceSummary(todayDateStr);
+    } catch (err) {
+      console.error('[Worker] Error triggering 11 PM daily attendance summary:', err);
+    }
   }
 
   for (const emp of activeEmployees) {

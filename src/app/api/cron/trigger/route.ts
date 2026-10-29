@@ -5,6 +5,7 @@ import { refreshHROneToken } from '@/lib/hrone/token';
 import { getDatabase } from '@/lib/mongodb';
 import { resolveWhatsAppRecipient } from '@/lib/whatsapp/recipient';
 import { sendWhatsAppNotification } from '@/whatsapp/bot';
+import { sendDailyAttendanceSummary } from '@/lib/whatsapp/admin';
 import { NextRequest, NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
@@ -42,6 +43,13 @@ async function handleCronTrigger(req: NextRequest) {
     const [todayDateStr, currentIstHHMM] = istTime.split('T');
     const istHour = parseInt(currentIstHHMM.split(':')[0], 10);
     const today = new Date();
+
+    // Trigger 11:00 PM IST daily attendance recap for Super Admin if not already sent
+    if (istHour >= 23) {
+      sendDailyAttendanceSummary(todayDateStr).catch((err) => {
+        console.error('[Cron] Error triggering 11 PM daily summary:', err);
+      });
+    }
 
     const dayOfWeek = new Date(
       today.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' })
