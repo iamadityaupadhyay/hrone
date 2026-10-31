@@ -24,6 +24,8 @@ interface BroadcastModalProps {
   isOpen: boolean;
   onClose: () => void;
   employees: EmployeeProfile[];
+  totalCount?: number;
+  activeCount?: number;
   whatsAppStatus?: { status: string; phoneNumber?: string } | null;
   onSuccessNotification?: (msg: string) => void;
 }
@@ -59,6 +61,8 @@ export default function BroadcastModal({
   isOpen,
   onClose,
   employees,
+  totalCount,
+  activeCount,
   whatsAppStatus,
   onSuccessNotification,
 }: BroadcastModalProps) {
@@ -82,8 +86,10 @@ export default function BroadcastModal({
   const [loadingHistory, setLoadingHistory] = useState<boolean>(false);
 
   const activeEmployees = employees.filter((e) => e.status === 'ACTIVE' && e.schedule?.active);
+  const resolvedTotalCount = totalCount && totalCount > 0 ? totalCount : employees.length;
+  const resolvedActiveCount = activeCount && activeCount > 0 ? activeCount : activeEmployees.length;
   const recipientCount =
-    target === 'test' ? 1 : target === 'active' ? activeEmployees.length : employees.length;
+    target === 'test' ? 1 : target === 'active' ? resolvedActiveCount : resolvedTotalCount;
 
   const fetchHistory = useCallback(async () => {
     setLoadingHistory(true);
@@ -303,7 +309,7 @@ export default function BroadcastModal({
                       <Users className="w-3.5 h-3.5 text-violet-400" />
                     </div>
                     <p className="text-[11px] text-slate-400 mt-1">
-                      {employees.length} total recipients
+                      {resolvedTotalCount} total recipients
                     </p>
                   </button>
 
@@ -321,7 +327,7 @@ export default function BroadcastModal({
                       <Radio className="w-3.5 h-3.5 text-emerald-400" />
                     </div>
                     <p className="text-[11px] text-slate-400 mt-1">
-                      {activeEmployees.length} autopilot active
+                      {resolvedActiveCount} autopilot active
                     </p>
                   </button>
 

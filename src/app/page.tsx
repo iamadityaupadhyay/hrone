@@ -904,6 +904,8 @@ export default function AttendanceDashboard() {
         isOpen={showBroadcastModal}
         onClose={() => setShowBroadcastModal(false)}
         employees={employees}
+        totalCount={fleetCounts.total}
+        activeCount={fleetCounts.activeCount}
         whatsAppStatus={whatsAppStatus}
         onSuccessNotification={(msg) => setFeedback({ type: 'success', message: msg })}
       />
