@@ -269,7 +269,16 @@ async function processPendingBroadcasts() {
       { $set: { status: 'SENDING', startedAt: new Date().toISOString() } }
     );
 
-    const { sentCount, failedCount, results } = await sendBroadcast(pending.message, pending.recipients || []);
+    const { sentCount, failedCount, results } = await sendBroadcast(
+      pending.message,
+      pending.recipients || [],
+      async (sent, failed) => {
+        await db
+          .collection('broadcasts')
+          .updateOne({ _id: pending._id }, { $set: { sentCount: sent, failedCount: failed } })
+          .catch(() => {});
+      }
+    );
 
     await db.collection('broadcasts').updateOne(
       { _id: pending._id },

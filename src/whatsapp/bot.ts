@@ -126,6 +126,7 @@ export interface BroadcastRecipient {
   employeeId?: string;
   name?: string;
   jid: string;
+  phoneJid?: string;
 }
 
 export interface BroadcastExecutionResult {
@@ -141,34 +142,75 @@ export interface BroadcastExecutionResult {
 }
 
 /**
- * Send a broadcast message to multiple WhatsApp recipients with throttling
+ * Send a broadcast message to multiple WhatsApp recipients with throttling, phone fallback, and retries
  */
 export async function sendBroadcast(
   message: string,
-  recipients: BroadcastRecipient[]
+  recipients: BroadcastRecipient[],
+  onProgress?: (sent: number, failed: number, total: number) => Promise<void>
 ): Promise<BroadcastExecutionResult> {
   const results: BroadcastExecutionResult['results'] = [];
   let sentCount = 0;
   let failedCount = 0;
 
-  for (const r of recipients) {
+  for (let i = 0; i < recipients.length; i++) {
+    const r = recipients[i];
+    let sentOk = false;
+    let lastError: string | undefined;
+
+    // 1. Try Primary JID
     try {
-      const ok = await sendWhatsAppNotification(message, r.jid);
-      if (ok) {
-        sentCount++;
-        results.push({ employeeId: r.employeeId, name: r.name, jid: r.jid, success: true });
-      } else {
-        failedCount++;
-        results.push({ employeeId: r.employeeId, name: r.name, jid: r.jid, success: false, error: 'Send returned false' });
+      sentOk = await sendWhatsAppNotification(message, r.jid);
+      if (!sentOk) {
+        lastError = 'Primary JID delivery returned false';
       }
     } catch (err) {
-      failedCount++;
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      results.push({ employeeId: r.employeeId, name: r.name, jid: r.jid, success: false, error: errorMsg });
+      lastError = err instanceof Error ? err.message : String(err);
     }
 
-    // 350ms delay between sends to respect WhatsApp rate limiting
-    await new Promise((res) => setTimeout(res, 350));
+    // 2. If failed and phone number is available, retry with Phone JID
+    if (!sentOk && r.phoneJid && r.phoneJid !== r.jid) {
+      console.log(`[Broadcast] Retrying for ${r.name} via phone number: ${r.phoneJid}`);
+      await new Promise((res) => setTimeout(res, 500));
+      try {
+        sentOk = await sendWhatsAppNotification(message, r.phoneJid);
+      } catch (err) {
+        lastError = err instanceof Error ? err.message : String(err);
+      }
+    }
+
+    // 3. If still failed, wait 1.2s (in case socket was briefly reconnecting) and try one final time
+    if (!sentOk) {
+      await new Promise((res) => setTimeout(res, 1200));
+      try {
+        const retryTarget = (r.phoneJid && r.phoneJid !== r.jid) ? r.phoneJid : r.jid;
+        sentOk = await sendWhatsAppNotification(message, retryTarget);
+      } catch (err) {
+        lastError = err instanceof Error ? err.message : String(err);
+      }
+    }
+
+    if (sentOk) {
+      sentCount++;
+      results.push({ employeeId: r.employeeId, name: r.name, jid: r.jid, success: true });
+    } else {
+      failedCount++;
+      results.push({
+        employeeId: r.employeeId,
+        name: r.name,
+        jid: r.jid,
+        success: false,
+        error: lastError || 'Send failed after retry',
+      });
+    }
+
+    // Report periodic progress to DB
+    if (onProgress && (i % 2 === 0 || i === recipients.length - 1)) {
+      await onProgress(sentCount, failedCount, recipients.length).catch(() => {});
+    }
+
+    // 500ms delay between sends to respect WhatsApp rate limiting
+    await new Promise((res) => setTimeout(res, 500));
   }
 
   return { sentCount, failedCount, results };

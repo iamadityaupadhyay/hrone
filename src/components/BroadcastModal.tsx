@@ -55,6 +55,10 @@ const TEMPLATES = [
     name: '⏰ Attendance Reminder',
     text: `⏰ *Attendance Reminder*\n\nDear Team,\n\nPlease make sure to check your punch-in / punch-out attendance status today on HROne.\n\n👉 Reply *status* or *in* anytime to view your personal status.\n\nHave a productive day!`,
   },
+  {
+    name: '🏠 WFH Location Feature',
+    text: `🏠 *New Feature: Work From Home (WFH) Location Punching* 📍\n\nDear Team,\n\nIf you are working from home for the day or upcoming days, you can now set your attendance to punch from your home location automatically.\n\n*How to use:* \n\n1️⃣ *To Activate:*\nSend: *home loc on*\nThe bot will ask for your WhatsApp Location Pin (📎 ➔ Location) or your home area address.\n\n2️⃣ *While WFH Mode is ON:*\nAll scheduled auto-pilot punches and manual punches will strictly punch from your saved home location.\n\n3️⃣ *When Returning to Office:*\nSend: *home loc off*\nPunches will instantly revert back to the Sector 142 office location.\n\n4️⃣ *Check Your Current Mode:*\nReply *home loc* or *status* anytime.\n\nBest regards,\n*Management*`,
+  },
 ];
 
 export default function BroadcastModal({

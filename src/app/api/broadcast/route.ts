@@ -1,6 +1,6 @@
 import { getAllEmployees } from '@/lib/db/employees';
 import { getDatabase } from '@/lib/mongodb';
-import { resolveWhatsAppRecipient } from '@/lib/whatsapp/recipient';
+import { resolveWhatsAppRecipient, resolveWhatsAppPhoneJid } from '@/lib/whatsapp/recipient';
 import { getWhatsAppBotStatus, sendBroadcast } from '@/whatsapp/bot';
 import { NextRequest, NextResponse } from 'next/server';
 
@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Broadcast message cannot be empty' }, { status: 400 });
     }
 
-    let recipients: Array<{ employeeId?: string; name?: string; jid: string }> = [];
+    let recipients: Array<{ employeeId?: string; name?: string; jid: string; phoneJid?: string }> = [];
 
     if (target === 'test') {
       if (!testNumber) {
@@ -85,12 +85,14 @@ export async function POST(req: NextRequest) {
       const jidSet = new Set<string>();
       for (const emp of targetEmployees) {
         const jid = resolveWhatsAppRecipient(emp);
+        const phoneJid = resolveWhatsAppPhoneJid(emp);
         if (jid && !jidSet.has(jid)) {
           jidSet.add(jid);
           recipients.push({
             employeeId: String(emp.employeeId),
             name: emp.name,
             jid,
+            phoneJid: phoneJid && phoneJid !== jid ? phoneJid : undefined,
           });
         }
       }
