@@ -2,6 +2,7 @@ import { getAllEmployees } from '@/lib/db/employees';
 import { isHolidayToday } from '@/lib/db/holidays';
 import { executePunch, generateRandomPunchTime, getISTPunchTime, isTimeTriggerMatch } from '@/lib/hrone/punch';
 import { refreshHROneToken } from '@/lib/hrone/token';
+import { DEFAULT_SCHEDULE_CONFIG } from '@/lib/config/schedule';
 import { getDatabase } from '@/lib/mongodb';
 import { resolveWhatsAppRecipient } from '@/lib/whatsapp/recipient';
 import { sendWhatsAppNotification } from '@/whatsapp/bot';
@@ -105,10 +106,10 @@ async function handleCronTrigger(req: NextRequest) {
         // Auto mode based on current IST hour
         // Morning Window (8:00 AM - 12:00 PM) -> Check In
         // Evening Window (5:00 PM - 11:00 PM) -> Check Out
-        const [inStartH] = (emp.schedule.checkInMin || '09:30').split(':').map(Number);
-        const [inEndH] = (emp.schedule.checkInMax || '09:55').split(':').map(Number);
-        const [outStartH] = (emp.schedule.checkOutMin || '19:00').split(':').map(Number);
-        const [outEndH] = (emp.schedule.checkOutMax || '19:30').split(':').map(Number);
+        const [inStartH] = (emp.schedule.checkInMin || DEFAULT_SCHEDULE_CONFIG.checkInMin).split(':').map(Number);
+        const [inEndH] = (emp.schedule.checkInMax || DEFAULT_SCHEDULE_CONFIG.checkInMax).split(':').map(Number);
+        const [outStartH] = (emp.schedule.checkOutMin || DEFAULT_SCHEDULE_CONFIG.checkOutMin).split(':').map(Number);
+        const [outEndH] = (emp.schedule.checkOutMax || DEFAULT_SCHEDULE_CONFIG.checkOutMax).split(':').map(Number);
 
         // Generous window bounds for automated cloud crons
         const morningWindowStart = Math.min(inStartH, 9);
@@ -127,12 +128,12 @@ async function handleCronTrigger(req: NextRequest) {
       let todayPunch = emp.todayPunch;
       if (!todayPunch || todayPunch.date !== todayDateStr) {
         const plannedIn = generateRandomPunchTime(
-          emp.schedule.checkInMin || '09:30',
-          emp.schedule.checkInMax || '09:55'
+          emp.schedule.checkInMin || DEFAULT_SCHEDULE_CONFIG.checkInMin,
+          emp.schedule.checkInMax || DEFAULT_SCHEDULE_CONFIG.checkInMax
         );
         const plannedOut = generateRandomPunchTime(
-          emp.schedule.checkOutMin || '19:00',
-          emp.schedule.checkOutMax || '19:30'
+          emp.schedule.checkOutMin || DEFAULT_SCHEDULE_CONFIG.checkOutMin,
+          emp.schedule.checkOutMax || DEFAULT_SCHEDULE_CONFIG.checkOutMax
         );
 
         todayPunch = {

@@ -25,6 +25,7 @@ import {
 } from '../lib/hrone/regularization';
 import { getDatabase } from '../lib/mongodb';
 import { EmployeeProfile } from '../lib/types/employee';
+import { DEFAULT_SCHEDULE_CONFIG } from '../lib/config/schedule';
 
 const AUTH_DIR = path.resolve(process.cwd(), '.whatsapp_auth');
 let sock: WASocket | null = null;
@@ -56,6 +57,12 @@ interface PendingSaturdayLocationState {
   timestamp: number;
 }
 const pendingSaturdayLocations = new Map<string, PendingSaturdayLocationState>();
+
+interface PendingHomeLocationState {
+  employeeId: number;
+  timestamp: number;
+}
+const pendingHomeLocations = new Map<string, PendingHomeLocationState>();
 
 export function getWhatsAppBotStatus() {
   return {
@@ -377,6 +384,7 @@ async function handleCommand(
   if (cmd === 'cancel' || cmd === 'abort' || cmd === 'reset' || cmd === 'logout') {
     pendingLogins.delete(from);
     pendingSaturdayLocations.delete(from);
+    pendingHomeLocations.delete(from);
 
     // If logging out / unlinking active WhatsApp session
     if (cmd === 'logout' || cmd === 'reset') {
@@ -458,10 +466,10 @@ async function handleCommand(
           geoLocation: '210-211, altF, Sector 142, Noida, Uttar Pradesh 201304, India',
           schedule: {
             active: true,
-            checkInMin: '09:30',
-            checkInMax: '09:55',
-            checkOutMin: '19:00',
-            checkOutMax: '19:30',
+            checkInMin: DEFAULT_SCHEDULE_CONFIG.checkInMin,
+            checkInMax: DEFAULT_SCHEDULE_CONFIG.checkInMax,
+            checkOutMin: DEFAULT_SCHEDULE_CONFIG.checkOutMin,
+            checkOutMax: DEFAULT_SCHEDULE_CONFIG.checkOutMax,
             workingDays: [1, 2, 3, 4, 5],
           },
           status: 'ACTIVE',
@@ -628,10 +636,10 @@ async function handleCommand(
         geoLocation: '210-211, altF, Sector 142, Noida, Uttar Pradesh 201304, India',
         schedule: {
           active: true,
-          checkInMin: '09:30',
-          checkInMax: '09:55',
-          checkOutMin: '19:00',
-          checkOutMax: '19:30',
+          checkInMin: DEFAULT_SCHEDULE_CONFIG.checkInMin,
+          checkInMax: DEFAULT_SCHEDULE_CONFIG.checkInMax,
+          checkOutMin: DEFAULT_SCHEDULE_CONFIG.checkOutMin,
+          checkOutMax: DEFAULT_SCHEDULE_CONFIG.checkOutMax,
           workingDays: [1, 2, 3, 4, 5],
         },
         status: 'ACTIVE',
@@ -680,6 +688,120 @@ async function handleCommand(
     } else if (cmd === 'no' || cmd === 'n' || cmd === 'cancel' || cmd === 'abort') {
       pendingRegularizations.delete(from);
       await sock.sendMessage(from, { text: `❌ Regularization request cancelled.\n\n👉 Reply *status* for card or *regularize* to check again` });
+      return;
+    }
+  }
+
+  // Pending Home / WFH Location Confirmation State
+  const pendingHome = pendingHomeLocations.get(from);
+  if (pendingHome && matchedEmp) {
+    if (cmd === 'skip' || cmd === 'cancel' || cmd === 'abort') {
+      pendingHomeLocations.delete(from);
+      await sock.sendMessage(from, {
+        text: `👍 Home location setup cancelled. Punches will use your standard office location.\n\n👉 Reply *home loc on* anytime to setup WFH punches.`,
+      });
+      return;
+    }
+
+    if (cmd === 'ok' || cmd === 'keep') {
+      if (matchedEmp.homeLatitude && matchedEmp.homeLongitude) {
+        pendingHomeLocations.delete(from);
+        const db = await getDatabase();
+        await db.collection('employees').updateOne(
+          { employeeId: matchedEmp.employeeId },
+          {
+            $set: {
+              homeLocationEnabled: true,
+              homeLocationActivatedAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            },
+          }
+        );
+        await sock.sendMessage(from, {
+          text:
+            `✅ *Home Location Mode Activated!* 🏠🟢\n\n` +
+            `• *Employee:* ${matchedEmp.name}\n` +
+            `• *Location:* ${matchedEmp.homeGeoLocation || 'Saved Home Location'}\n` +
+            `• *Coordinates:* ${matchedEmp.homeLatitude}, ${matchedEmp.homeLongitude}\n\n` +
+            `🎉 All auto & manual punches will now punch from home until you reply *home loc off*.\n\n` +
+            `👉 Reply *status* for today's summary or *home loc off* when returning to office.`,
+        });
+        return;
+      }
+    }
+
+    // 1. WhatsApp Location Pin received
+    if (locationData) {
+      const lat = locationData.latitude;
+      const lng = locationData.longitude;
+      const acc = locationData.accuracy || 12.0;
+
+      const resolvedAddress = await resolveLocationAddress(
+        lat,
+        lng,
+        locationData.name,
+        locationData.address
+      );
+
+      const db = await getDatabase();
+      await db.collection('employees').updateOne(
+        { employeeId: matchedEmp.employeeId },
+        {
+          $set: {
+            homeLocationEnabled: true,
+            homeLatitude: lat.toFixed(7),
+            homeLongitude: lng.toFixed(7),
+            homeGeoAccuracy: acc.toFixed(3),
+            homeGeoLocation: resolvedAddress,
+            homeLocationActivatedAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+        }
+      );
+      pendingHomeLocations.delete(from);
+
+      await sock.sendMessage(from, {
+        text:
+          `✅ *Home Location Saved from WhatsApp Pin!* 🏠🟢\n\n` +
+          `• *Employee:* ${matchedEmp.name}\n` +
+          `• *Location:* ${resolvedAddress}\n` +
+          `• *Coordinates:* ${lat.toFixed(6)}, ${lng.toFixed(6)}\n\n` +
+          `🎉 *WFH Mode is now ACTIVE!* All attendance punches (both automatic & manual) will strictly punch from this home location until you say *home loc off*.\n\n` +
+          `Whenever you return to office, simply reply *home loc off*.\n\n` +
+          `👉 Reply *status* to view your card`,
+      });
+      return;
+    }
+
+    // 2. User typed an address text
+    if (cmd && cmd !== '__location_pin__') {
+      const coords = getCoordinatesForAddress(commandText.trim());
+      const db = await getDatabase();
+      await db.collection('employees').updateOne(
+        { employeeId: matchedEmp.employeeId },
+        {
+          $set: {
+            homeLocationEnabled: true,
+            homeLatitude: coords.latitude,
+            homeLongitude: coords.longitude,
+            homeGeoAccuracy: '15.000',
+            homeGeoLocation: commandText.trim(),
+            homeLocationActivatedAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+        }
+      );
+      pendingHomeLocations.delete(from);
+
+      await sock.sendMessage(from, {
+        text:
+          `✅ *Home Location Saved!* 🏠🟢\n\n` +
+          `• *Employee:* ${matchedEmp.name}\n` +
+          `• *Location:* ${commandText.trim()}\n` +
+          `• *Coordinates:* ${coords.latitude}, ${coords.longitude}\n\n` +
+          `🎉 *WFH Mode is now ACTIVE!* All punches will use this home location until you say *home loc off*.\n\n` +
+          `👉 Reply *status* for card or *home loc off* when returning to office`,
+      });
       return;
     }
   }
@@ -800,16 +922,6 @@ async function handleCommand(
     const lng = locationData.longitude;
     const acc = locationData.accuracy || 15.0;
 
-    if (getDistanceFromOfficeMeters(lat, lng) < 400) {
-      await sock.sendMessage(from, {
-        text:
-          `⚠️ *Office Location Detected!*\n\n` +
-          `The GPS pin you sent is at the office (Sector 142). Saturday location *must not* be the office address.\n\n` +
-          `Please share your *Home/Remote location pin (📎)*.`,
-      });
-      return;
-    }
-
     const resolvedAddress = await resolveLocationAddress(
       lat,
       lng,
@@ -818,14 +930,80 @@ async function handleCommand(
     );
 
     const db = await getDatabase();
+
+    // If Home Location mode is active, update Home Location
+    if (matchedEmp.homeLocationEnabled) {
+      await db.collection('employees').updateOne(
+        { employeeId: matchedEmp.employeeId },
+        {
+          $set: {
+            homeLatitude: lat.toFixed(7),
+            homeLongitude: lng.toFixed(7),
+            homeGeoAccuracy: acc.toFixed(3),
+            homeGeoLocation: resolvedAddress,
+            updatedAt: new Date().toISOString(),
+          },
+        }
+      );
+
+      await sock.sendMessage(from, {
+        text:
+          `🏠 *Home Location (WFH) Updated via GPS Pin!* ✅\n\n` +
+          `• *Location:* ${resolvedAddress}\n` +
+          `• *Coordinates:* ${lat.toFixed(6)}, ${lng.toFixed(6)}\n\n` +
+          `All punches will use this updated home location until you reply *home loc off*.\n\n` +
+          `👉 Reply *status* to view your card`,
+      });
+      return;
+    }
+
+    // If Saturday auto-punch is active
+    const isSatEnabled = (matchedEmp.schedule?.workingDays || [1, 2, 3, 4, 5]).includes(6);
+    if (isSatEnabled) {
+      if (getDistanceFromOfficeMeters(lat, lng) < 400) {
+        await sock.sendMessage(from, {
+          text:
+            `⚠️ *Office Location Detected!*\n\n` +
+            `The GPS pin you sent is at the office (Sector 142). Saturday location *must not* be the office address.\n\n` +
+            `Please share your *Home/Remote location pin (📎)*.`,
+        });
+        return;
+      }
+
+      await db.collection('employees').updateOne(
+        { employeeId: matchedEmp.employeeId },
+        {
+          $set: {
+            saturdayLatitude: lat.toFixed(7),
+            saturdayLongitude: lng.toFixed(7),
+            saturdayGeoAccuracy: acc.toFixed(3),
+            saturdayGeoLocation: resolvedAddress,
+            updatedAt: new Date().toISOString(),
+          },
+        }
+      );
+
+      await sock.sendMessage(from, {
+        text:
+          `📍 *Saturday Location Updated via GPS Pin!* ✅\n\n` +
+          `• *Location:* ${resolvedAddress}\n` +
+          `• *Coordinates:* ${lat.toFixed(6)}, ${lng.toFixed(6)}\n\n` +
+          `Saturday punches will use this pin instead of the office.\n\n` +
+          `💡 _To use this for daily WFH instead, reply *home loc on*_\n\n` +
+          `👉 Reply *status* to view your card`,
+      });
+      return;
+    }
+
+    // Default: Save as Home Location for WFH
     await db.collection('employees').updateOne(
       { employeeId: matchedEmp.employeeId },
       {
         $set: {
-          saturdayLatitude: lat.toFixed(7),
-          saturdayLongitude: lng.toFixed(7),
-          saturdayGeoAccuracy: acc.toFixed(3),
-          saturdayGeoLocation: resolvedAddress,
+          homeLatitude: lat.toFixed(7),
+          homeLongitude: lng.toFixed(7),
+          homeGeoAccuracy: acc.toFixed(3),
+          homeGeoLocation: resolvedAddress,
           updatedAt: new Date().toISOString(),
         },
       }
@@ -833,11 +1011,11 @@ async function handleCommand(
 
     await sock.sendMessage(from, {
       text:
-        `📍 *Saturday Location Updated via GPS Pin!* ✅\n\n` +
-        `• *Location:* ${resolvedAddress}\n` +
+        `📍 *Location Pin Received & Saved!* 🏠✅\n\n` +
+        `• *Saved Location:* ${resolvedAddress}\n` +
         `• *Coordinates:* ${lat.toFixed(6)}, ${lng.toFixed(6)}\n\n` +
-        `Saturday punches will use this pin instead of the office.\n\n` +
-        `👉 Reply *status* to view your card`,
+        `👉 Reply *home loc on* to start punching from this location (WFH mode)\n` +
+        `👉 Or reply *sat on* to enable Saturday auto-punch from this pin`,
     });
     return;
   }
@@ -869,6 +1047,8 @@ async function handleCommand(
       `${userLine}\n\n` +
       `• *in* / *out* – Punch attendance\n` +
       `• *status* – Today's punches\n` +
+      `• *home loc on* / *off* – WFH location pin toggle\n` +
+      `• *home loc* – View current home location\n` +
       `• *pause* / *resume* – Auto-pilot\n` +
       `• *sat on* / *sat off* – Saturday auto-punch\n` +
       `• *sat loc* – View/update Saturday location\n` +
@@ -1354,7 +1534,9 @@ async function handleCommand(
 
     const holidayLine = holidayCheck.isHoliday ? `• 🌴 Holiday: *${holidayCheck.holidayName}*\n` : '';
     let locLine = `📍 Office: ${matchedEmp.geoLocation || 'Office'}\n`;
-    if (isSaturday && matchedEmp.saturdayGeoLocation) {
+    if (matchedEmp.homeLocationEnabled && matchedEmp.homeGeoLocation) {
+      locLine = `🏠 *WFH / Home Loc:* 🟢 *Active*\n📍 *Today's Punch Location:* *${matchedEmp.homeGeoLocation}*\n`;
+    } else if (isSaturday && matchedEmp.saturdayGeoLocation) {
       locLine = `📍 Today's Punch Location: *${matchedEmp.saturdayGeoLocation}* (Saturday Remote)\n`;
     } else if (isSatEnabled) {
       locLine += `📍 Saturday Remote: ${matchedEmp.saturdayGeoLocation ? `*${matchedEmp.saturdayGeoLocation}*` : '⚠️ _Not set (share pin 📎)_'}\n`;
@@ -1378,7 +1560,9 @@ async function handleCommand(
   // 5. PUNCH IN (Strictly for this sender only - Live HROne API execution)
   if (cmd === 'punch in' || cmd === 'in' || cmd === 'check in' || cmd === 'checkin') {
     const res = await executePunch(matchedEmp, 'CHECK_IN', 'MANUAL');
-    const loc = matchedEmp.geoLocation || 'Office';
+    const loc = res.isHomeLocation
+      ? `${res.location} (🏠 Home/WFH)`
+      : res.location || matchedEmp.geoLocation || 'Office';
     const replyMsg = res.success
       ? `🌅 *Good morning ${matchedEmp.name}!* ☀️\n\n🟢 Checked In at *${formatISTDisplay(res.punchTime)}*\n📍 Location: *${loc}*\n\n👉 Reply *out* to Check-Out or *status* for card`
       : `🌅 *Good morning ${matchedEmp.name}!*\n\n❌ Check-In Failed: ${res.error || 'Cloud error'}\n📍 Location: *${loc}*\n\n👉 Reply *in* to retry or *status* for card`;
@@ -1389,7 +1573,9 @@ async function handleCommand(
   // 6. PUNCH OUT (Strictly for this sender only - Live HROne API execution)
   if (cmd === 'punch out' || cmd === 'out' || cmd === 'check out' || cmd === 'checkout') {
     const res = await executePunch(matchedEmp, 'CHECK_OUT', 'MANUAL');
-    const loc = matchedEmp.geoLocation || 'Office';
+    const loc = res.isHomeLocation
+      ? `${res.location} (🏠 Home/WFH)`
+      : res.location || matchedEmp.geoLocation || 'Office';
     const replyMsg = res.success
       ? `🌆 *Good evening ${matchedEmp.name}!* 🌙\n\n🔴 Checked Out at *${formatISTDisplay(res.punchTime)}*\n📍 Location: *${loc}*\n\n👉 Reply *status* for summary or *logs* for history`
       : `🌆 *Good evening ${matchedEmp.name}!*\n\n❌ Check-Out Failed: ${res.error || 'Cloud error'}\n📍 Location: *${loc}*\n\n👉 Reply *out* to retry or *status* for card`;
@@ -1577,6 +1763,143 @@ async function handleCommand(
         `• *Location:* ${rawLoc}\n` +
         `• *Coordinates:* ${coords.latitude}, ${coords.longitude}\n\n` +
         `Saturday punches will use this remote address instead of the office.`,
+    });
+    return;
+  }
+
+  // 8d. TOGGLE HOME LOCATION / WFH AUTO-ATTENDANCE
+  if (
+    cmd === 'home loc on' ||
+    cmd === 'homeloc on' ||
+    cmd === 'home location on' ||
+    cmd === 'wfh on' ||
+    cmd === 'enable home loc' ||
+    cmd === 'enable wfh' ||
+    cmd === 'home on'
+  ) {
+    pendingHomeLocations.set(from, {
+      employeeId: matchedEmp.employeeId,
+      timestamp: Date.now(),
+    });
+
+    if (matchedEmp.homeLatitude && matchedEmp.homeLongitude) {
+      const msg =
+        `🏠 *Work From Home (WFH) Mode* 📍\n\n` +
+        `• *Employee:* ${matchedEmp.name}\n` +
+        `• *Saved Home Location:*\n_${matchedEmp.homeGeoLocation || 'Home Coordinates Saved'}_\n` +
+        `• *Coordinates:* ${matchedEmp.homeLatitude}, ${matchedEmp.homeLongitude}\n\n` +
+        `📍 *Share a WhatsApp Pin Location (📎)* to update your home location,\n` +
+        `OR reply *ok* to activate WFH using this saved home location,\n` +
+        `OR reply with your home area address (e.g. \`Indirapuram, Ghaziabad\`).\n\n` +
+        `Once activated, all attendance punches will punch from home until you reply *home loc off*.`;
+      await sock.sendMessage(from, { text: msg });
+    } else {
+      const msg =
+        `🏠 *Work From Home (WFH) Mode Setup* 📍\n\n` +
+        `• *Employee:* ${matchedEmp.name}\n\n` +
+        `Please share your *WhatsApp Pin Location* now:\n` +
+        `• 📌 Tap *📎* (or *+* on iPhone) ➔ *Location* ➔ *Send your current location* (from home)\n` +
+        `• OR reply with your *Home Area / Address* (e.g. \`Sector 62, Noida\` or \`Gaur City, Greater Noida\`)\n\n` +
+        `Once pinned, all attendance punches (both scheduled auto-pilot & manual) will punch from this saved home location until you reply *home loc off*.`;
+      await sock.sendMessage(from, { text: msg });
+    }
+    return;
+  }
+
+  if (
+    cmd === 'home loc off' ||
+    cmd === 'homeloc off' ||
+    cmd === 'home location off' ||
+    cmd === 'wfh off' ||
+    cmd === 'disable home loc' ||
+    cmd === 'disable wfh' ||
+    cmd === 'home off'
+  ) {
+    pendingHomeLocations.delete(from);
+    const db = await getDatabase();
+    await db.collection('employees').updateOne(
+      { employeeId: matchedEmp.employeeId },
+      {
+        $set: {
+          homeLocationEnabled: false,
+          updatedAt: new Date().toISOString(),
+        },
+      }
+    );
+    const msg =
+      `🏢 *WFH Mode Disabled — Back to Office Location!* 🟢\n\n` +
+      `• *Employee:* ${matchedEmp.name}\n` +
+      `• *Punch Location:* Sector 142, Noida (Default Office)\n\n` +
+      `All future attendance punches will now punch from the default office location.\n\n` +
+      `👉 Reply *home loc on* anytime you work from home again, or *status* to view your card.`;
+    await sock.sendMessage(from, { text: msg });
+    return;
+  }
+
+  // 8e. VIEW OR SET HOME LOCATION DIRECTLY
+  if (
+    cmd === 'home loc' ||
+    cmd === 'homeloc' ||
+    cmd === 'home location' ||
+    cmd === 'wfh' ||
+    cmd === 'wfh status' ||
+    cmd.startsWith('home loc ') ||
+    cmd.startsWith('homeloc ') ||
+    cmd.startsWith('home location ')
+  ) {
+    const rawLoc = commandText.replace(/^home\s*(loc|location)?\s*/i, '').trim();
+    if (!rawLoc || cmd === 'home loc' || cmd === 'homeloc' || cmd === 'home location' || cmd === 'wfh' || cmd === 'wfh status') {
+      const isEnabled = matchedEmp.homeLocationEnabled;
+      const statusBadge = isEnabled ? '🏠 *ACTIVE (WFH Mode)*' : '🏢 *INACTIVE (Using Office)*';
+
+      if (matchedEmp.homeLatitude && matchedEmp.homeLongitude) {
+        await sock.sendMessage(from, {
+          text:
+            `📍 *Home Location Status for ${matchedEmp.name}:*\n\n` +
+            `• *Status:* ${statusBadge}\n` +
+            `• *Address:* ${matchedEmp.homeGeoLocation || 'Home Coordinates Saved'}\n` +
+            `• *Coordinates:* ${matchedEmp.homeLatitude}, ${matchedEmp.homeLongitude}\n\n` +
+            `👉 Reply *${isEnabled ? 'home loc off' : 'home loc on'}* to toggle, or share a *Location Pin 📎* to update.`,
+        });
+      } else {
+        pendingHomeLocations.set(from, { employeeId: matchedEmp.employeeId, timestamp: Date.now() });
+        await sock.sendMessage(from, {
+          text:
+            `🏠 *No Home Location Saved Yet for ${matchedEmp.name}.*\n\n` +
+            `Please share your *WhatsApp Pin Location*:\n` +
+            `• 📌 Tap *📎* ➔ *Location* to send GPS pin, OR\n` +
+            `• ✍️ Reply *home loc <your home address>*`,
+        });
+      }
+      return;
+    }
+
+    const coords = getCoordinatesForAddress(rawLoc);
+    const db = await getDatabase();
+    await db.collection('employees').updateOne(
+      { employeeId: matchedEmp.employeeId },
+      {
+        $set: {
+          homeLocationEnabled: true,
+          homeLatitude: coords.latitude,
+          homeLongitude: coords.longitude,
+          homeGeoAccuracy: '15.000',
+          homeGeoLocation: rawLoc,
+          homeLocationActivatedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      }
+    );
+    pendingHomeLocations.delete(from);
+
+    await sock.sendMessage(from, {
+      text:
+        `✅ *Home Location Saved & WFH Activated!* 🏠🟢\n\n` +
+        `• *Employee:* ${matchedEmp.name}\n` +
+        `• *Location:* ${rawLoc}\n` +
+        `• *Coordinates:* ${coords.latitude}, ${coords.longitude}\n\n` +
+        `All punches will now punch from this home location until you reply *home loc off*.\n\n` +
+        `👉 Reply *status* for today's summary or *home loc off* when returning to office.`,
     });
     return;
   }

@@ -65,10 +65,10 @@ export function WhatsAppBotModal({
                 <div className="bg-zinc-900 border border-zinc-800/80 px-2 py-1 rounded text-zinc-300">• status</div>
                 <div className="bg-zinc-900 border border-zinc-800/80 px-2 py-1 rounded text-zinc-300">• in / punch in</div>
                 <div className="bg-zinc-900 border border-zinc-800/80 px-2 py-1 rounded text-zinc-300">• out / punch out</div>
-                <div className="bg-zinc-900 border border-zinc-800/80 px-2 py-1 rounded text-zinc-300">• refresh</div>
-                <div className="bg-zinc-900 border border-zinc-800/80 px-2 py-1 rounded text-zinc-300">• logs</div>
-                <div className="bg-zinc-900 border border-zinc-800/80 px-2 py-1 rounded text-zinc-300">• stats (admin)</div>
-                <div className="bg-zinc-900 border border-zinc-800/80 px-2 py-1 rounded text-zinc-300">• pending in/out</div>
+                <div className="bg-zinc-900 border border-zinc-800/80 px-2 py-1 rounded text-zinc-300">• home loc on / off</div>
+                <div className="bg-zinc-900 border border-zinc-800/80 px-2 py-1 rounded text-zinc-300">• sat on / off / loc</div>
+                <div className="bg-zinc-900 border border-zinc-800/80 px-2 py-1 rounded text-zinc-300">• regularize</div>
+                <div className="bg-zinc-900 border border-zinc-800/80 px-2 py-1 rounded text-zinc-300">• refresh / logs</div>
                 <div className="bg-zinc-900 border border-zinc-800/80 px-2 py-1 rounded text-zinc-300">• broadcast &lt;msg&gt;</div>
               </div>
             </div>

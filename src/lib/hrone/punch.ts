@@ -10,6 +10,8 @@ export interface PunchExecutionResult {
   responsePayload?: unknown;
   error?: string;
   logId?: string;
+  location?: string;
+  isHomeLocation?: boolean;
 }
 
 /**
@@ -95,6 +97,59 @@ export function isTimeTriggerMatch(currentTimeStr: string, plannedTimeStr: strin
   return currTotal >= planTotal && currTotal <= planTotal + (maxWindowHours * 60);
 }
 
+/**
+ * Determines the effective punch location considering:
+ * 1. Home Location (WFH mode) if enabled and coordinates exist
+ * 2. Saturday Remote Location if punch is on Saturday and configured
+ * 3. Default office location
+ */
+export function getEffectivePunchLocation(
+  employee: EmployeeProfile,
+  isSaturday: boolean = false
+): {
+  latitude: string;
+  longitude: string;
+  geoAccuracy: string;
+  geoLocation: string;
+  isHomeLocation: boolean;
+  isSaturdayLocation: boolean;
+} {
+  const isHomeLoc = Boolean(employee.homeLocationEnabled && employee.homeLatitude && employee.homeLongitude);
+
+  const latitude = isHomeLoc
+    ? employee.homeLatitude!
+    : isSaturday && employee.saturdayLatitude
+    ? employee.saturdayLatitude
+    : (employee.latitude || '28.5004327');
+
+  const longitude = isHomeLoc
+    ? employee.homeLongitude!
+    : isSaturday && employee.saturdayLongitude
+    ? employee.saturdayLongitude
+    : (employee.longitude || '77.4150811');
+
+  const geoAccuracy = isHomeLoc
+    ? employee.homeGeoAccuracy || '12.000'
+    : isSaturday && employee.saturdayGeoAccuracy
+    ? employee.saturdayGeoAccuracy
+    : (employee.geoAccuracy || '12.126');
+
+  const geoLocation = isHomeLoc
+    ? employee.homeGeoLocation || 'Home / Remote Location'
+    : isSaturday && employee.saturdayGeoLocation
+    ? employee.saturdayGeoLocation
+    : (employee.geoLocation || '210-211, altF, Sector 142, Noida, Uttar Pradesh 201304, India');
+
+  return {
+    latitude,
+    longitude,
+    geoAccuracy,
+    geoLocation,
+    isHomeLocation: isHomeLoc,
+    isSaturdayLocation: !isHomeLoc && isSaturday && Boolean(employee.saturdayLatitude),
+  };
+}
+
 export async function executePunch(
   employee: EmployeeProfile,
   punchType: 'CHECK_IN' | 'CHECK_OUT',
@@ -127,16 +182,9 @@ export async function executePunch(
   const dayOfWeek = new Date(`${punchDateStr}T12:00:00+05:30`).getDay();
   const isSaturday = dayOfWeek === 6;
 
-  // If Saturday and employee has configured a Saturday remote location, use it
-  const effectiveLat = isSaturday && employee.saturdayLatitude ? employee.saturdayLatitude : employee.latitude;
-  const effectiveLng = isSaturday && employee.saturdayLongitude ? employee.saturdayLongitude : employee.longitude;
-  const effectiveAcc = isSaturday && employee.saturdayGeoAccuracy ? employee.saturdayGeoAccuracy : employee.geoAccuracy;
-  const effectiveLocation =
-    isSaturday && employee.saturdayGeoLocation
-      ? employee.saturdayGeoLocation
-      : (employee.geoLocation || '210-211, altF, Sector 142, Noida, Uttar Pradesh 201304, India');
-
-  const jitteredGeo = getJitteredLocation(effectiveLat, effectiveLng, effectiveAcc);
+  // Resolve effective location (Home WFH > Saturday Remote > Office)
+  const effectiveLoc = getEffectivePunchLocation(employee, isSaturday);
+  const jitteredGeo = getJitteredLocation(effectiveLoc.latitude, effectiveLoc.longitude, effectiveLoc.geoAccuracy);
 
   const payload = {
     requestType: 'A',
@@ -145,7 +193,7 @@ export async function executePunch(
     latitude: jitteredGeo.latitude,
     longitude: jitteredGeo.longitude,
     geoAccuracy: jitteredGeo.geoAccuracy,
-    geoLocation: effectiveLocation,
+    geoLocation: effectiveLoc.geoLocation,
     punchTime,
     remarks: '',
     uploadedPhotoOneName: '',
@@ -243,5 +291,7 @@ export async function executePunch(
     responsePayload,
     error: errorMessage,
     logId,
+    location: effectiveLoc.geoLocation,
+    isHomeLocation: effectiveLoc.isHomeLocation,
   };
 }

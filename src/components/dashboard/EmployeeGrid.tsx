@@ -84,10 +84,18 @@ export function EmployeeGrid({
                       .toUpperCase()}
                   </div>
                   <div>
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       <h3 className="font-semibold text-zinc-100 text-sm truncate max-w-[140px] sm:max-w-[170px]">
                         {emp.name}
                       </h3>
+                      {emp.homeLocationEnabled && (
+                        <span
+                          className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-sky-500/15 border border-sky-500/30 text-sky-300 text-[10px] font-mono font-medium"
+                          title={emp.homeGeoLocation ? `WFH Mode Active: ${emp.homeGeoLocation}` : 'WFH Mode Active'}
+                        >
+                          🏠 WFH
+                        </span>
+                      )}
                       {isSuperAdmin && (
                         <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-amber-500/15 border border-amber-500/30 text-amber-300 text-[10px] font-mono font-semibold">
                           <Shield className="w-2.5 h-2.5" /> Admin

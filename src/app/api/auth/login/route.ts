@@ -3,6 +3,7 @@ import { upsertEmployee } from '@/lib/db/employees';
 import { syncEmployeeHolidays } from '@/lib/db/holidays';
 import { loginWithHROne } from '@/lib/hrone/auth';
 import { EmployeeProfile } from '@/lib/types/employee';
+import { DEFAULT_SCHEDULE_CONFIG } from '@/lib/config/schedule';
 
 export async function POST(req: NextRequest) {
   try {
@@ -41,10 +42,10 @@ export async function POST(req: NextRequest) {
       geoLocation: geoLocation || '210-211, altF, Sector 142, Noida, Uttar Pradesh 201304, India',
       schedule: schedule || {
         active: true,
-        checkInMin: '09:30',
-        checkInMax: '09:55',
-        checkOutMin: '19:00',
-        checkOutMax: '19:30',
+        checkInMin: DEFAULT_SCHEDULE_CONFIG.checkInMin,
+        checkInMax: DEFAULT_SCHEDULE_CONFIG.checkInMax,
+        checkOutMin: DEFAULT_SCHEDULE_CONFIG.checkOutMin,
+        checkOutMax: DEFAULT_SCHEDULE_CONFIG.checkOutMax,
         workingDays: [1, 2, 3, 4, 5],
       },
       status: 'ACTIVE',

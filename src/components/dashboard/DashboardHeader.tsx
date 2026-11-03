@@ -12,6 +12,7 @@ interface DashboardHeaderProps {
   onOpenWhatsAppModal: () => void;
   onOpenBroadcastModal: () => void;
   onOpenPasswordModal: () => void;
+  onOpenTimingModal: () => void;
   onLogout: () => void;
 }
 
@@ -25,6 +26,7 @@ export function DashboardHeader({
   onOpenWhatsAppModal,
   onOpenBroadcastModal,
   onOpenPasswordModal,
+  onOpenTimingModal,
   onLogout,
 }: DashboardHeaderProps) {
   return (
@@ -81,6 +83,16 @@ export function DashboardHeader({
           >
             <Megaphone className="w-3.5 h-3.5 text-sky-400" />
             <span className="hidden sm:inline">Broadcast</span>
+          </button>
+
+          {/* Timing Rules Button */}
+          <button
+            onClick={onOpenTimingModal}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 text-xs font-medium transition-all"
+            title="Configure Punch Timing Windows"
+          >
+            <Clock className="w-3.5 h-3.5 text-emerald-400" />
+            <span className="hidden sm:inline">Timings</span>
           </button>
 
           {/* Password Management */}

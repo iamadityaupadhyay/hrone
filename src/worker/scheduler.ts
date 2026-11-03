@@ -6,6 +6,7 @@ import * as http from 'http';
 import { getAllEmployees } from '../lib/db/employees';
 import { executePunch, generateRandomPunchTime, getISTPunchTime, isTimeTriggerMatch } from '../lib/hrone/punch';
 import { refreshHROneToken } from '../lib/hrone/token';
+import { DEFAULT_SCHEDULE_CONFIG } from '../lib/config/schedule';
 import { getDatabase } from '../lib/mongodb';
 import { EmployeeProfile } from '../lib/types/employee';
 import { isHolidayToday, syncAllActiveEmployeesHolidays } from '../lib/db/holidays';
@@ -93,12 +94,12 @@ async function runSchedulerTick() {
     let todayPunch = emp.todayPunch;
     if (!todayPunch || todayPunch.date !== todayDateStr) {
       const plannedIn = generateRandomPunchTime(
-        emp.schedule.checkInMin || '09:30',
-        emp.schedule.checkInMax || '09:55'
+        emp.schedule.checkInMin || DEFAULT_SCHEDULE_CONFIG.checkInMin,
+        emp.schedule.checkInMax || DEFAULT_SCHEDULE_CONFIG.checkInMax
       );
       const plannedOut = generateRandomPunchTime(
-        emp.schedule.checkOutMin || '19:00',
-        emp.schedule.checkOutMax || '19:30'
+        emp.schedule.checkOutMin || DEFAULT_SCHEDULE_CONFIG.checkOutMin,
+        emp.schedule.checkOutMax || DEFAULT_SCHEDULE_CONFIG.checkOutMax
       );
 
       todayPunch = {
@@ -140,7 +141,11 @@ async function runSchedulerTick() {
       const recipient = resolveWhatsAppRecipient(emp);
 
       if (recipient) {
-        const location = (dayOfWeek === 6 && emp.saturdayGeoLocation) ? emp.saturdayGeoLocation : (emp.geoLocation || 'Office');
+        const location = res.isHomeLocation
+          ? `${res.location} (🏠 Home/WFH)`
+          : (dayOfWeek === 6 && emp.saturdayGeoLocation)
+          ? emp.saturdayGeoLocation
+          : (res.location || emp.geoLocation || 'Office');
         if (res.success) {
           await sendWhatsAppNotification(
             `🌅 *Good morning ${emp.name}!* ☀️\n\n🟢 Auto Check-In: *${currentIstTime}*\n📍 Location: *${location}*\n\n👉 Reply *status* for today or *out* to Check-Out`,
@@ -176,7 +181,11 @@ async function runSchedulerTick() {
       const recipient = resolveWhatsAppRecipient(emp);
 
       if (recipient) {
-        const location = (dayOfWeek === 6 && emp.saturdayGeoLocation) ? emp.saturdayGeoLocation : (emp.geoLocation || 'Office');
+        const location = res.isHomeLocation
+          ? `${res.location} (🏠 Home/WFH)`
+          : (dayOfWeek === 6 && emp.saturdayGeoLocation)
+          ? emp.saturdayGeoLocation
+          : (res.location || emp.geoLocation || 'Office');
         if (res.success) {
           await sendWhatsAppNotification(
             `🌆 *Good evening ${emp.name}!* 🌙\n\n🔴 Auto Check-Out: *${currentIstTime}*\n📍 Location: *${location}*\n\n👉 Reply *status* for summary or *logs* for history`,

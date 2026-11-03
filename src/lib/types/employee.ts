@@ -38,6 +38,12 @@ export interface EmployeeProfile {
   saturdayLongitude?: string;
   saturdayGeoAccuracy?: string;
   saturdayGeoLocation?: string; // e.g. "Home, Indirapuram, Ghaziabad" (different from office)
+  homeLocationEnabled?: boolean; // When true, all punches strictly use home location (WFH mode)
+  homeLatitude?: string; // e.g. "28.6289123"
+  homeLongitude?: string; // e.g. "77.3650456"
+  homeGeoAccuracy?: string; // e.g. "12.000"
+  homeGeoLocation?: string; // e.g. "Indirapuram, Ghaziabad"
+  homeLocationActivatedAt?: string; // ISO string
   schedule: EmployeeSchedule;
   status: 'ACTIVE' | 'PAUSED' | 'NEEDS_REAUTH';
   lastTokenRefresh?: string;

@@ -13,6 +13,8 @@ import { ActivityLogSection } from '@/components/dashboard/ActivityLogSection';
 import { AddEmployeeModal } from '@/components/dashboard/AddEmployeeModal';
 import { PasswordManagementModal } from '@/components/dashboard/PasswordManagementModal';
 import { WhatsAppBotModal } from '@/components/dashboard/WhatsAppBotModal';
+import { TimingRulesModal } from '@/components/dashboard/TimingRulesModal';
+import { DEFAULT_SCHEDULE_CONFIG } from '@/lib/config/schedule';
 import { CheckCircle2, AlertCircle, X } from 'lucide-react';
 
 interface FleetCounts {
@@ -83,6 +85,7 @@ export default function AttendanceDashboard() {
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
   const [showBroadcastModal, setShowBroadcastModal] = useState(false);
+  const [showTimingModal, setShowTimingModal] = useState(false);
 
   // Add Employee Form State
   const [importTab, setImportTab] = useState<'login' | 'curl' | 'manual'>('login');
@@ -99,10 +102,10 @@ export default function AttendanceDashboard() {
     companyDomainCode: 'uharvest',
     refreshToken: '',
     jwtToken: '',
-    checkInMin: '09:30',
-    checkInMax: '09:55',
-    checkOutMin: '19:00',
-    checkOutMax: '19:30',
+    checkInMin: DEFAULT_SCHEDULE_CONFIG.checkInMin,
+    checkInMax: DEFAULT_SCHEDULE_CONFIG.checkInMax,
+    checkOutMin: DEFAULT_SCHEDULE_CONFIG.checkOutMin,
+    checkOutMax: DEFAULT_SCHEDULE_CONFIG.checkOutMax,
     includeSaturday: false,
     geoLocation: '210-211, altF, Sector 142, Noida, Uttar Pradesh 201304, India',
     latitude: '28.5004327',
@@ -741,6 +744,7 @@ export default function AttendanceDashboard() {
         onOpenWhatsAppModal={() => setShowWhatsAppModal(true)}
         onOpenBroadcastModal={() => setShowBroadcastModal(true)}
         onOpenPasswordModal={() => setShowPasswordModal(true)}
+        onOpenTimingModal={() => setShowTimingModal(true)}
         onLogout={handleLogout}
       />
 
@@ -908,6 +912,15 @@ export default function AttendanceDashboard() {
         activeCount={fleetCounts.activeCount}
         whatsAppStatus={whatsAppStatus}
         onSuccessNotification={(msg) => setFeedback({ type: 'success', message: msg })}
+      />
+
+      <TimingRulesModal
+        isOpen={showTimingModal}
+        onClose={() => setShowTimingModal(false)}
+        onSaved={() => {
+          fetchEmployees();
+          setFeedback({ type: 'success', message: 'Punch timings updated successfully!' });
+        }}
       />
     </div>
   );

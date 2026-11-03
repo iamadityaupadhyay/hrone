@@ -1,6 +1,7 @@
 import { getAllEmployees, upsertEmployee } from '@/lib/db/employees';
 import { parseCurlOrInput } from '@/lib/hrone/parser';
 import { EmployeeProfile } from '@/lib/types/employee';
+import { DEFAULT_SCHEDULE_CONFIG } from '@/lib/config/schedule';
 import { NextRequest, NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
@@ -183,10 +184,10 @@ export async function POST(req: NextRequest) {
         '210-211, altF, Sector 142, Noida, Uttar Pradesh 201304, India',
       schedule: {
         active: true,
-        checkInMin: '09:30',
-        checkInMax: '09:55',
-        checkOutMin: '19:00',
-        checkOutMax: '19:30',
+        checkInMin: DEFAULT_SCHEDULE_CONFIG.checkInMin,
+        checkInMax: DEFAULT_SCHEDULE_CONFIG.checkInMax,
+        checkOutMin: DEFAULT_SCHEDULE_CONFIG.checkOutMin,
+        checkOutMax: DEFAULT_SCHEDULE_CONFIG.checkOutMax,
         workingDays: [1, 2, 3, 4, 5],
         ...(body.schedule || {}),
       },

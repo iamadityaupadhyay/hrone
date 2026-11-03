@@ -3,6 +3,7 @@ import { executePunch, generateRandomPunchTime, getISTPunchTime } from '@/lib/hr
 import { resolveWhatsAppRecipient } from '@/lib/whatsapp/recipient';
 import { sendWhatsAppNotification } from '@/whatsapp/bot';
 import { EmployeeProfile } from '@/lib/types/employee';
+import { DEFAULT_SCHEDULE_CONFIG } from '@/lib/config/schedule';
 import { NextRequest, NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
@@ -66,12 +67,12 @@ async function handleCheckinAll(req: NextRequest) {
       let todayPunch = emp.todayPunch;
       if (!todayPunch || todayPunch.date !== todayDateStr) {
         const plannedIn = generateRandomPunchTime(
-          emp.schedule.checkInMin || '09:30',
-          emp.schedule.checkInMax || '09:55'
+          emp.schedule.checkInMin || DEFAULT_SCHEDULE_CONFIG.checkInMin,
+          emp.schedule.checkInMax || DEFAULT_SCHEDULE_CONFIG.checkInMax
         );
         const plannedOut = generateRandomPunchTime(
-          emp.schedule.checkOutMin || '19:00',
-          emp.schedule.checkOutMax || '19:30'
+          emp.schedule.checkOutMin || DEFAULT_SCHEDULE_CONFIG.checkOutMin,
+          emp.schedule.checkOutMax || DEFAULT_SCHEDULE_CONFIG.checkOutMax
         );
 
         todayPunch = {
