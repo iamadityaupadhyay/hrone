@@ -1,3 +1,17 @@
+export type SubscriptionPlan = 'BASIC_99' | 'PRO_149';
+export type SubscriptionStatus = 'TRIAL' | 'ACTIVE' | 'EXPIRED' | 'LIFETIME_FREE';
+
+export interface EmployeeSubscription {
+  plan: SubscriptionPlan;
+  status: SubscriptionStatus;
+  validUntil: string; // ISO string
+  trialEndsAt?: string;
+  amountPaid?: number;
+  lastPaymentDate?: string;
+  paymentMethod?: string;
+  isComped?: boolean; // Super Admin or manually comped lifetime access
+}
+
 export interface EmployeeSchedule {
   active: boolean;
   checkInMin: string; // "09:00"
@@ -52,6 +66,7 @@ export interface EmployeeProfile {
   todayPunch?: TodayPunchState;
   isSuperAdmin?: boolean;
   role?: 'SUPER_ADMIN' | 'ADMIN' | 'EMPLOYEE';
+  subscription?: EmployeeSubscription;
   whatsappLid?: string;
   whatsappJid?: string;
   whatsappName?: string;

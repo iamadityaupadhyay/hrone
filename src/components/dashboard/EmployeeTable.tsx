@@ -98,6 +98,29 @@ export function EmployeeTable({
                               🏠 WFH
                             </span>
                           )}
+                          {emp.isSuperAdmin || emp.subscription?.isComped ? (
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-amber-500/15 border border-amber-500/30 text-amber-300 text-[10px] font-mono font-medium" title="Lifetime VIP Pass">
+                              👑 VIP
+                            </span>
+                          ) : emp.subscription?.status === 'ACTIVE' ? (
+                            emp.subscription.plan === 'PRO_149' ? (
+                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-purple-500/15 border border-purple-500/30 text-purple-300 text-[10px] font-mono font-medium" title="Pro Plan (₹149/mo)">
+                                ⭐ Pro
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[10px] font-mono font-medium" title="Standard Plan (₹99/mo)">
+                                🟢 Std
+                              </span>
+                            )
+                          ) : emp.subscription?.status === 'EXPIRED' ? (
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-rose-500/15 border border-rose-500/30 text-rose-300 text-[10px] font-mono font-medium" title="Subscription Expired">
+                              🔴 Exp
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-blue-500/15 border border-blue-500/30 text-blue-300 text-[10px] font-mono font-medium" title="Free Trial Active">
+                              ⏳ Trial
+                            </span>
+                          )}
                           {isSuperAdmin && (
                             <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-amber-500/15 border border-amber-500/30 text-amber-300 text-[10px] font-mono font-semibold">
                               <Shield className="w-2.5 h-2.5" /> Admin

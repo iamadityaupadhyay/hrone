@@ -26,6 +26,7 @@ import {
 import { getDatabase } from '../lib/mongodb';
 import { EmployeeProfile } from '../lib/types/employee';
 import { DEFAULT_SCHEDULE_CONFIG } from '../lib/config/schedule';
+import { resolveSubscription, formatSubscriptionMessage } from '../lib/subscription';
 
 const AUTH_DIR = path.resolve(process.cwd(), '.whatsapp_auth');
 let sock: WASocket | null = null;
@@ -715,6 +716,25 @@ async function handleCommand(
   const pendingReg = pendingRegularizations.get(from);
   if (pendingReg && matchedEmp) {
     if (cmd === 'yes' || cmd === 'y' || cmd === 'confirm' || cmd === 'regularize confirm' || cmd === '1') {
+      const subEval = resolveSubscription(matchedEmp);
+      if (!subEval.isValid) {
+        pendingRegularizations.delete(from);
+        await sock.sendMessage(from, {
+          text: `🔴 *Subscription Expired*\n\nYour attendance subscription has expired. Reply *sub* or *pay* to renew.`,
+        });
+        return;
+      }
+      if (!subEval.isPro) {
+        pendingRegularizations.delete(from);
+        await sock.sendMessage(from, {
+          text:
+            `⭐ *Pro Feature Required (₹149/mo)* ⚡\n\n` +
+            `Attendance auto-regularization is available exclusively on the *Pro Plan* (₹149/mo).\n\n` +
+            `👉 Reply *upgrade* or *sub* to switch to Pro for ₹149/mo and unlock 1-tap regularization!`,
+        });
+        return;
+      }
+
       pendingRegularizations.delete(from);
       const submitRes = await submitAttendanceRegularization(matchedEmp, pendingReg.dates, 'Tech Issue');
       if (submitRes.success) {
@@ -1029,6 +1049,7 @@ async function handleCommand(
     const adminSection = isSuperAdmin
       ? `\n\n🛡️ *Super Admin Fleet Commands:*\n` +
         `• *fleet* – Fleet status & live counts\n` +
+        `• *subs* – Subscriptions & MRR breakdown\n` +
         `• *stats* – 11 PM attendance summary\n` +
         `• *pending in* – Employees who missed check-in\n` +
         `• *pending out* – Employees who missed check-out\n` +
@@ -1037,7 +1058,8 @@ async function handleCommand(
         `• *refresh all* – Refresh sliding tokens for all\n` +
         `• *sync holidays* – Pull latest calendar from HROne\n` +
         `• *admin errors* – View recent punch/system errors\n` +
-        `• *admin holidays* – Distinct upcoming holidays\n` +
+        `• *admin activate <id> [99|149]* – Activate sub\n` +
+        `• *admin comp <id>* – Grant lifetime VIP pass\n` +
         `• *broadcast <msg>* – Announce to all employees\n` +
         `• *autopilot on all* / *off all* – Fleet toggle`
       : '';
@@ -1047,12 +1069,13 @@ async function handleCommand(
       `${userLine}\n\n` +
       `• *in* / *out* – Punch attendance\n` +
       `• *status* – Today's punches\n` +
-      `• *home loc on* / *off* – WFH location pin toggle\n` +
+      `• *sub* / *plan* – Subscription & pricing (₹99/₹149)\n` +
+      `• *home loc on* / *off* – WFH location pin toggle (Pro)\n` +
       `• *home loc* – View current home location\n` +
       `• *pause* / *resume* – Auto-pilot\n` +
       `• *sat on* / *sat off* – Saturday auto-punch\n` +
       `• *sat loc* – View/update Saturday location\n` +
-      `• *regularize* – Absent days\n` +
+      `• *regularize* – Absent days (Pro)\n` +
       `• *logs* – Recent punches\n` +
       `• *refresh* – Extend session\n` +
       `• *login* – Link account` +
@@ -1069,6 +1092,23 @@ async function handleCommand(
     await sock.sendMessage(from, {
       text: `👋 Send your *HROne Employee Code* (e.g. *E1885*) to link your account:`,
     });
+    return;
+  }
+
+  // 3a. SUBSCRIPTION & PRICING COMMAND
+  if (
+    cmd === 'sub' ||
+    cmd === 'subscription' ||
+    cmd === 'plan' ||
+    cmd === 'plans' ||
+    cmd === 'pricing' ||
+    cmd === 'pay' ||
+    cmd === 'upgrade' ||
+    cmd === 'renew'
+  ) {
+    const upiId = process.env.UPI_ID || 'aditya@upi';
+    const subMsg = formatSubscriptionMessage(matchedEmp, upiId);
+    await sock.sendMessage(from, { text: subMsg });
     return;
   }
 
@@ -1117,6 +1157,183 @@ async function handleCommand(
       `👉 Commands: *checkin all*, *checkout all*, *admin errors*, *holidays*`;
 
     await sock.sendMessage(from, { text });
+    return;
+  }
+
+  // 3b-1. SUPER ADMIN: SUBSCRIPTION STATUS BREAKDOWN & MRR
+  if (isSuperAdmin && (cmd === 'subs' || cmd === 'admin subs' || cmd === 'admin subscriptions' || cmd === 'subscriptions')) {
+    const allEmps = await getAllEmployees();
+    let proCount = 0;
+    let basicCount = 0;
+    let trialCount = 0;
+    let expiredCount = 0;
+    let compedCount = 0;
+
+    for (const emp of allEmps) {
+      const sub = resolveSubscription(emp);
+      if (sub.isComped) compedCount++;
+      else if (sub.status === 'TRIAL') trialCount++;
+      else if (sub.status === 'EXPIRED') expiredCount++;
+      else if (sub.plan === 'PRO_149') proCount++;
+      else if (sub.plan === 'BASIC_99') basicCount++;
+    }
+
+    const payingUsers = proCount + basicCount;
+    const mrr = proCount * 149 + basicCount * 99;
+
+    const msg =
+      `💳 *Fleet Subscription Console* 📊\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n` +
+      `👥 Total Employees: *${allEmps.length}*\n` +
+      `💰 Monthly Run Rate (MRR): *₹${mrr.toLocaleString('en-IN')}*\n` +
+      `💳 Paid Subscribers: *${payingUsers}*\n\n` +
+      `📦 *Breakdown:*\n` +
+      `• ⭐ Pro (₹149/mo): *${proCount}*\n` +
+      `• 🟢 Standard (₹99/mo): *${basicCount}*\n` +
+      `• ⏳ Active Free Trial: *${trialCount}*\n` +
+      `• 🔴 Expired: *${expiredCount}*\n` +
+      `• 👑 Lifetime Free / VIP: *${compedCount}*\n\n` +
+      `👉 *Admin Controls:*\n` +
+      `• *admin activate <id> [99|149] [days]* – Activate sub\n` +
+      `• *admin comp <id>* – Grant lifetime VIP pass`;
+
+    await sock.sendMessage(from, { text: msg });
+    return;
+  }
+
+  // 3b-2. SUPER ADMIN: ACTIVATE EMPLOYEE SUBSCRIPTION
+  if (isSuperAdmin && (cmd.startsWith('admin activate') || cmd.startsWith('activate '))) {
+    const parts = commandText.trim().split(/\s+/);
+    const offset = cmd.startsWith('admin activate') ? 2 : 1;
+    const targetIdStr = parts[offset];
+    const planArg = parts[offset + 1];
+    const daysArg = parts[offset + 2];
+
+    if (!targetIdStr) {
+      await sock.sendMessage(from, {
+        text: `⚠️ *Usage:* admin activate <employeeId|phone|name> [99|149] [days]\n_Example: admin activate 102 149 30_`,
+      });
+      return;
+    }
+
+    const allEmps = await getAllEmployees();
+    const target = allEmps.find(
+      (e) =>
+        e.employeeId.toString() === targetIdStr ||
+        e.whatsappLid === targetIdStr ||
+        (e.whatsappJid && e.whatsappJid.includes(targetIdStr)) ||
+        (e.mobileNumber && e.mobileNumber.includes(targetIdStr)) ||
+        (e.username && e.username.includes(targetIdStr)) ||
+        e.name.toLowerCase().includes(targetIdStr.toLowerCase())
+    );
+
+    if (!target) {
+      await sock.sendMessage(from, { text: `❌ Employee matching "${targetIdStr}" not found.` });
+      return;
+    }
+
+    const plan = planArg === '99' || planArg === 'basic' ? 'BASIC_99' : 'PRO_149';
+    const days = parseInt(daysArg || '30', 10) || 30;
+    const validUntil = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
+    const amount = plan === 'PRO_149' ? 149 : 99;
+
+    const db = await getDatabase();
+    await db.collection('employees').updateOne(
+      { employeeId: target.employeeId },
+      {
+        $set: {
+          subscription: {
+            plan,
+            status: 'ACTIVE',
+            validUntil,
+            activatedAt: new Date().toISOString(),
+            amountPaid: amount,
+            isComped: false,
+          },
+          updatedAt: new Date().toISOString(),
+        },
+      }
+    );
+
+    await sock.sendMessage(from, {
+      text:
+        `✅ *Subscription Activated!* 🎉\n━━━━━━━━━━━━━━━━━━━━\n` +
+        `👤 *Employee:* ${target.name} (${target.employeeId})\n` +
+        `📦 *Plan:* ${plan === 'PRO_149' ? '⭐ Pro (₹149)' : '🟢 Standard (₹99)'}\n` +
+        `📅 *Duration:* ${days} days\n` +
+        `⏳ *Valid Until:* ${new Date(validUntil).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`,
+    });
+
+    const empRecipient =
+      target.whatsappLid ||
+      target.whatsappJid ||
+      (target.mobileNumber ? `${target.mobileNumber.replace(/\D/g, '')}@s.whatsapp.net` : null);
+    if (empRecipient) {
+      try {
+        await sock.sendMessage(empRecipient, {
+          text:
+            `🎉 *Your Attendance Subscription is Activated!* 🚀\n━━━━━━━━━━━━━━━━━━━━\n` +
+            `• *Plan:* ${plan === 'PRO_149' ? '⭐ Pro Plan (₹149/mo)' : '🟢 Standard Plan (₹99/mo)'}\n` +
+            `• *Valid Until:* ${new Date(validUntil).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}\n\n` +
+            `Thank you for your payment! All features are unlocked.\n👉 Reply *sub* or *status* anytime.`,
+        });
+      } catch (err) {
+        console.error('Failed to send sub activation notice to employee:', err);
+      }
+    }
+    return;
+  }
+
+  // 3b-3. SUPER ADMIN: COMP / VIP LIFETIME ACCESS
+  if (isSuperAdmin && (cmd.startsWith('admin comp') || cmd.startsWith('admin vip') || cmd.startsWith('comp '))) {
+    const parts = commandText.trim().split(/\s+/);
+    const offset = cmd.startsWith('admin comp') || cmd.startsWith('admin vip') ? 2 : 1;
+    const targetIdStr = parts[offset];
+
+    if (!targetIdStr) {
+      await sock.sendMessage(from, {
+        text: `⚠️ *Usage:* admin comp <employeeId|phone|name>\n_Example: admin comp 102_`,
+      });
+      return;
+    }
+
+    const allEmps = await getAllEmployees();
+    const target = allEmps.find(
+      (e) =>
+        e.employeeId.toString() === targetIdStr ||
+        e.whatsappLid === targetIdStr ||
+        (e.whatsappJid && e.whatsappJid.includes(targetIdStr)) ||
+        (e.mobileNumber && e.mobileNumber.includes(targetIdStr)) ||
+        (e.username && e.username.includes(targetIdStr)) ||
+        e.name.toLowerCase().includes(targetIdStr.toLowerCase())
+    );
+
+    if (!target) {
+      await sock.sendMessage(from, { text: `❌ Employee matching "${targetIdStr}" not found.` });
+      return;
+    }
+
+    const db = await getDatabase();
+    await db.collection('employees').updateOne(
+      { employeeId: target.employeeId },
+      {
+        $set: {
+          subscription: {
+            plan: 'PRO_149',
+            status: 'LIFETIME_FREE',
+            validUntil: '2099-12-31T23:59:59.000Z',
+            activatedAt: new Date().toISOString(),
+            amountPaid: 0,
+            isComped: true,
+          },
+          updatedAt: new Date().toISOString(),
+        },
+      }
+    );
+
+    await sock.sendMessage(from, {
+      text: `👑 *VIP Lifetime Free Access Granted!*\n\n${target.name} (${target.employeeId}) has been granted permanent lifetime access to the Pro tier.`,
+    });
     return;
   }
 
@@ -1757,6 +1974,24 @@ async function handleCommand(
     cmd === 'enable wfh' ||
     cmd === 'home on'
   ) {
+    const subEval = resolveSubscription(matchedEmp);
+    if (!subEval.isValid) {
+      await sock.sendMessage(from, {
+        text: `🔴 *Subscription Expired*\n\nYour attendance subscription has expired. Reply *sub* or *pay* to renew and activate WFH mode.`,
+      });
+      return;
+    }
+    if (!subEval.isPro) {
+      await sock.sendMessage(from, {
+        text:
+          `⭐ *Pro Feature Required (₹149/mo)* 🏠\n\n` +
+          `Unlimited Work-From-Home (WFH) GPS Pin mode is available exclusively on the *Pro Plan* (₹149/mo).\n\n` +
+          `Your current plan: *Standard (₹99/mo)*\n\n` +
+          `👉 Reply *upgrade* or *sub* to switch to Pro for ₹149/mo and unlock WFH mode!`,
+      });
+      return;
+    }
+
     pendingHomeLocations.set(from, {
       employeeId: matchedEmp.employeeId,
       timestamp: Date.now(),
@@ -1914,6 +2149,24 @@ async function handleCommand(
     cmd === 'missing punch' ||
     cmd === 'regularization'
   ) {
+    const subEval = resolveSubscription(matchedEmp);
+    if (!subEval.isValid) {
+      await sock.sendMessage(from, {
+        text: `🔴 *Subscription Expired*\n\nYour attendance subscription has expired. Reply *sub* or *pay* to renew and regularize missed attendance.`,
+      });
+      return;
+    }
+    if (!subEval.isPro) {
+      await sock.sendMessage(from, {
+        text:
+          `⭐ *Pro Feature Required (₹149/mo)* ⚡\n\n` +
+          `Missed attendance auto-regularization is available exclusively on the *Pro Plan* (₹149/mo).\n\n` +
+          `Your current plan: *Standard (₹99/mo)*\n\n` +
+          `👉 Reply *upgrade* or *sub* to switch to Pro for ₹149/mo and unlock 1-tap regularization!`,
+      });
+      return;
+    }
+
     await sock.sendMessage(from, {
       text: `⏳ Fetching attendance calendar & checking unregularized days for *${matchedEmp.name}*...`,
     });

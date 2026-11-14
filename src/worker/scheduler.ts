@@ -7,6 +7,7 @@ import { getAllEmployees } from '../lib/db/employees';
 import { executePunch, generateRandomPunchTime, getISTPunchTime, isTimeTriggerMatch } from '../lib/hrone/punch';
 import { refreshHROneToken } from '../lib/hrone/token';
 import { DEFAULT_SCHEDULE_CONFIG } from '../lib/config/schedule';
+import { resolveSubscription } from '../lib/subscription';
 import { getDatabase } from '../lib/mongodb';
 import { EmployeeProfile } from '../lib/types/employee';
 import { isHolidayToday, syncAllActiveEmployeesHolidays } from '../lib/db/holidays';
@@ -87,6 +88,13 @@ async function runSchedulerTick() {
     const holidayCheck = await isHolidayToday(emp.employeeId, todayDateStr, emp);
     if (holidayCheck.isHoliday) {
       await notifyHolidayAlert(holidayCheck.holidayName || 'Official Holiday', todayDateStr);
+      continue;
+    }
+
+    // 2c. Subscription status check (autopilot is active only for active subscribers or trials)
+    const subEval = resolveSubscription(emp);
+    if (!subEval.isValid) {
+      console.log(`[Worker] Skipping autopilot for ${emp.name} — Subscription is ${subEval.status}`);
       continue;
     }
 
