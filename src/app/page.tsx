@@ -15,6 +15,7 @@ import { PasswordManagementModal } from '@/components/dashboard/PasswordManageme
 import { WhatsAppBotModal } from '@/components/dashboard/WhatsAppBotModal';
 import { TimingRulesModal } from '@/components/dashboard/TimingRulesModal';
 import { SubscriptionModal } from '@/components/dashboard/SubscriptionModal';
+import { EmployeeSubscriptionModal } from '@/components/dashboard/EmployeeSubscriptionModal';
 import { DEFAULT_SCHEDULE_CONFIG } from '@/lib/config/schedule';
 import { CheckCircle2, AlertCircle, X } from 'lucide-react';
 
@@ -89,6 +90,7 @@ export default function AttendanceDashboard() {
   const [showTimingModal, setShowTimingModal] = useState(false);
   const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
   const [subscriptionEnforced, setSubscriptionEnforced] = useState(false);
+  const [subModalEmployee, setSubModalEmployee] = useState<EmployeeProfile | null>(null);
 
   // Add Employee Form State
   const [importTab, setImportTab] = useState<'login' | 'curl' | 'manual'>('login');
@@ -841,6 +843,7 @@ export default function AttendanceDashboard() {
             onManualPunch={handleManualPunch}
             onRefreshToken={handleRefreshToken}
             onDeleteEmployee={handleDeleteEmployee}
+            onManageSubscription={(emp) => setSubModalEmployee(emp)}
           />
         ) : (
           <EmployeeGrid
@@ -855,6 +858,7 @@ export default function AttendanceDashboard() {
             onManualPunch={handleManualPunch}
             onRefreshToken={handleRefreshToken}
             onDeleteEmployee={handleDeleteEmployee}
+            onManageSubscription={(emp) => setSubModalEmployee(emp)}
           />
         )}
 
@@ -949,6 +953,16 @@ export default function AttendanceDashboard() {
         onSaved={() => {
           fetchSubscriptionSettings();
           fetchEmployees();
+        }}
+      />
+
+      <EmployeeSubscriptionModal
+        isOpen={!!subModalEmployee}
+        employee={subModalEmployee}
+        onClose={() => setSubModalEmployee(null)}
+        onSaved={() => {
+          fetchEmployees();
+          setFeedback({ type: 'success', message: 'Employee subscription updated successfully!' });
         }}
       />
     </div>

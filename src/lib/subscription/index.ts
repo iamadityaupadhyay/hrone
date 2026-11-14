@@ -172,8 +172,10 @@ export function formatSubscriptionMessage(emp: EmployeeProfile, upiId: string = 
     `💡 *Need to renew or upgrade?*\n` +
     `• *Standard (₹99/mo):* Auto check-in/out, Sat punch, Holiday alerts\n` +
     `• *Pro (₹149/mo):* Everything in Standard + WFH Mode & Regularize\n\n` +
-    `👉 Send payment via UPI to: *${upiId}*\n` +
-    `_After paying, reply with your transaction UTR or screenshot to activate!_`
+    `🌐 *Pay via Secure Gateway (QR Code & Instant UPI):*\n` +
+    `https://attendance.upadhyayaditya.com/pay?emp=${emp.employeeId}\n\n` +
+    `Or send via UPI to: *${upiId}*\n` +
+    `_After paying, reply with your 12-digit transaction UTR to activate instantly!_`
   );
 }
 

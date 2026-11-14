@@ -13,6 +13,7 @@ import {
   Trash2,
   Lock,
   AlertCircle,
+  CreditCard,
 } from 'lucide-react';
 import { EmployeeProfile } from '@/lib/types/employee';
 
@@ -28,6 +29,7 @@ interface EmployeeGridProps {
   onManualPunch: (employeeId: number, type: 'CHECK_IN' | 'CHECK_OUT') => void;
   onRefreshToken: (employeeId: number, forcePassword?: boolean) => void;
   onDeleteEmployee: (id: string, name: string) => void;
+  onManageSubscription?: (emp: EmployeeProfile) => void;
 }
 
 function formatExpiryText(isoString?: string) {
@@ -52,6 +54,7 @@ export function EmployeeGrid({
   onManualPunch,
   onRefreshToken,
   onDeleteEmployee,
+  onManageSubscription,
 }: EmployeeGridProps) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -96,29 +99,39 @@ export function EmployeeGrid({
                           🏠 WFH
                         </span>
                       )}
-                      {emp.isSuperAdmin || emp.subscription?.isComped ? (
-                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-amber-500/15 border border-amber-500/30 text-amber-300 text-[10px] font-mono font-medium" title="Lifetime VIP Pass">
-                          👑 VIP
-                        </span>
-                      ) : emp.subscription?.status === 'ACTIVE' ? (
-                        emp.subscription.plan === 'PRO_149' ? (
-                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-purple-500/15 border border-purple-500/30 text-purple-300 text-[10px] font-mono font-medium" title="Pro Plan (₹149/mo)">
-                            ⭐ Pro
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (onManageSubscription) onManageSubscription(emp);
+                        }}
+                        className="cursor-pointer hover:opacity-80 transition-opacity"
+                        title="Click to manage subscription"
+                      >
+                        {emp.isSuperAdmin || emp.subscription?.isComped ? (
+                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-amber-500/15 border border-amber-500/30 text-amber-300 text-[10px] font-mono font-medium">
+                            👑 VIP
+                          </span>
+                        ) : emp.subscription?.status === 'ACTIVE' ? (
+                          emp.subscription.plan === 'PRO_149' ? (
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-purple-500/15 border border-purple-500/30 text-purple-300 text-[10px] font-mono font-medium">
+                              ⭐ Pro
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[10px] font-mono font-medium">
+                              🟢 Std
+                            </span>
+                          )
+                        ) : emp.subscription?.status === 'EXPIRED' ? (
+                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-rose-500/15 border border-rose-500/30 text-rose-300 text-[10px] font-mono font-medium">
+                            🔴 Exp
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[10px] font-mono font-medium" title="Standard Plan (₹99/mo)">
-                            🟢 Std
+                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-blue-500/15 border border-blue-500/30 text-blue-300 text-[10px] font-mono font-medium">
+                            ⏳ Trial
                           </span>
-                        )
-                      ) : emp.subscription?.status === 'EXPIRED' ? (
-                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-rose-500/15 border border-rose-500/30 text-rose-300 text-[10px] font-mono font-medium" title="Subscription Expired">
-                          🔴 Exp
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-blue-500/15 border border-blue-500/30 text-blue-300 text-[10px] font-mono font-medium" title="Free Trial Active">
-                          ⏳ Trial
-                        </span>
-                      )}
+                        )}
+                      </button>
                       {isSuperAdmin && (
                         <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-amber-500/15 border border-amber-500/30 text-amber-300 text-[10px] font-mono font-semibold">
                           <Shield className="w-2.5 h-2.5" /> Admin
@@ -179,6 +192,18 @@ export function EmployeeGrid({
                         <Calendar className="w-3.5 h-3.5 text-zinc-400" />
                         <span>{hasSaturday ? 'Turn Off Saturday' : 'Enable Saturday Punch'}</span>
                       </button>
+                      {onManageSubscription && (
+                        <button
+                          onClick={() => {
+                            onManageSubscription(emp);
+                            onSetMenuOpenId(null);
+                          }}
+                          className="w-full px-3 py-2 text-left hover:bg-zinc-800 flex items-center gap-2 text-purple-300 transition-colors"
+                        >
+                          <CreditCard className="w-3.5 h-3.5 text-purple-400" />
+                          <span>Manage Subscription</span>
+                        </button>
+                      )}
                       <button
                         onClick={() => {
                           onRefreshToken(emp.employeeId, false);

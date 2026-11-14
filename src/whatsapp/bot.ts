@@ -1346,6 +1346,86 @@ async function handleCommand(
     return;
   }
 
+  // 3b-4. SUPER ADMIN: APPROVE PAYMENT BY UTR
+  if (isSuperAdmin && (cmd.startsWith('admin approve') || cmd.startsWith('approve '))) {
+    const parts = commandText.trim().split(/\s+/);
+    const offset = cmd.startsWith('admin approve') ? 2 : 1;
+    const utrArg = parts[offset];
+
+    if (!utrArg) {
+      await sock.sendMessage(from, {
+        text: `⚠️ *Usage:* admin approve <12-digit UTR>\n_Example: admin approve 432198765432_`,
+      });
+      return;
+    }
+
+    const db = await getDatabase();
+    const payment = await db.collection('subscription_payments').findOne({ utr: utrArg.trim() });
+    if (!payment) {
+      await sock.sendMessage(from, { text: `❌ No payment found with UTR: *${utrArg}*` });
+      return;
+    }
+
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const validUntil = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    const plan = payment.plan || 'PRO_149';
+
+    await db.collection('subscription_payments').updateOne(
+      { _id: payment._id },
+      { $set: { status: 'APPROVED', verifiedAt: nowIso, verifiedBy: 'Super Admin WhatsApp', updatedAt: nowIso } }
+    );
+
+    const allEmps = await getAllEmployees();
+    const targetEmp = allEmps.find(
+      (e) =>
+        (payment.employeeId && e.employeeId === payment.employeeId) ||
+        e.name.toLowerCase() === (payment.employeeName || '').toLowerCase()
+    );
+
+    if (targetEmp) {
+      await db.collection('employees').updateOne(
+        { employeeId: targetEmp.employeeId },
+        {
+          $set: {
+            subscription: {
+              plan,
+              status: 'ACTIVE',
+              validUntil,
+              activatedAt: nowIso,
+              amountPaid: payment.amount || (plan === 'PRO_149' ? 149 : 99),
+              isComped: false,
+            },
+            updatedAt: nowIso,
+          },
+        }
+      );
+
+      // Notify employee
+      const recipient = resolveWhatsAppRecipient(targetEmp);
+      if (recipient) {
+        const planName = plan === 'PRO_149' ? '⭐ Pro Suite (₹149/mo)' : '🟢 Standard Plan (₹99/mo)';
+        const expiryFormatted = new Date(validUntil).toLocaleDateString('en-IN', {
+          day: '2-digit',
+          month: 'short',
+          year: 'numeric',
+        });
+        await sock.sendMessage(recipient, {
+          text:
+            `✅ *Payment Approved — Subscription Active!* 🎉\n━━━━━━━━━━━━━━━━━━━━\n` +
+            `• *Plan:* ${planName}\n` +
+            `• *Valid Until:* ${expiryFormatted}\n\n` +
+            `All attendance features are active and verified. Thank you for your payment!`,
+        });
+      }
+    }
+
+    await sock.sendMessage(from, {
+      text: `✅ *Payment Approved!* 💰\n━━━━━━━━━━━━━━━━━━━━\n• UTR: *${utrArg}*\n• Employee: *${targetEmp ? targetEmp.name : payment.employeeName}*\n• Plan: *${plan === 'PRO_149' ? '⭐ Pro (₹149)' : '🟢 Standard (₹99)'}*\n• Duration: *30 Days*`,
+    });
+    return;
+  }
+
   // 3c. SUPER ADMIN: BATCH CHECK-IN ALL
   if (isSuperAdmin && (cmd === 'checkin all' || cmd === 'punch in all' || cmd === 'admin checkin all' || cmd === 'check in all')) {
     await sock.sendMessage(from, { text: `⏳ *Super Admin Action:* Triggering Check-In for all pending employees...` });
