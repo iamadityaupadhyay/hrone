@@ -173,7 +173,7 @@ export function formatSubscriptionMessage(emp: EmployeeProfile, upiId: string = 
     `• *Standard (₹99/mo):* Auto check-in/out, Sat punch, Holiday alerts\n` +
     `• *Pro (₹149/mo):* Everything in Standard + WFH Mode & Regularize\n\n` +
     `🌐 *Pay via Secure Gateway (QR Code & Instant UPI):*\n` +
-    `${(process.env.APP_URL || process.env.RENDER_EXTERNAL_URL || 'https://hrone-ym8f.onrender.com').replace(/\/$/, '')}/pay?emp=${emp.employeeId}\n\n` +
+    `${(process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://hrone-mod.vercel.app').replace(/\/$/, '')}/pay?emp=${emp.employeeId}\n\n` +
     `Or send via UPI to: *${upiId}*\n` +
     `_After paying, reply with your 12-digit transaction UTR to activate instantly!_`
   );
