@@ -4,10 +4,12 @@ import { verifySessionToken, SESSION_COOKIE_NAME } from '@/lib/auth/session';
 export async function proxy(req: NextRequest) {
   const pathname = req.nextUrl.pathname;
 
-  // 1. Whitelisted public routes, API cron, and static assets
+  // 1. Whitelisted public routes, API cron, payment portal, and static assets
   if (
     pathname.startsWith('/api/cron') ||
     pathname.startsWith('/api/auth/session') ||
+    pathname.startsWith('/api/pay') ||
+    pathname.startsWith('/pay') ||
     pathname.startsWith('/_next') ||
     pathname === '/favicon.ico'
   ) {
