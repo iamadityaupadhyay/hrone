@@ -114,7 +114,7 @@ export function canUseRegularize(emp: EmployeeProfile): boolean {
 /**
  * Returns formatted WhatsApp message displaying user's current subscription card
  */
-export function formatSubscriptionMessage(emp: EmployeeProfile, upiId: string = 'aditya@upi', enforced?: boolean): string {
+export function formatSubscriptionMessage(emp: EmployeeProfile, upiId: string = 'aditya.upadhyay.1@superyes', enforced?: boolean): string {
   const isEnforced = typeof enforced === 'boolean' ? enforced : isEnforcedGlobal;
 
   if (!isEnforced) {

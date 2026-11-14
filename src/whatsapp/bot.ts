@@ -1110,7 +1110,7 @@ async function handleCommand(
     cmd === 'upgrade' ||
     cmd === 'renew'
   ) {
-    const upiId = process.env.UPI_ID || 'aditya@upi';
+    const upiId = process.env.UPI_ID || 'aditya.upadhyay.1@superyes';
     const subMsg = formatSubscriptionMessage(matchedEmp, upiId);
     await sock.sendMessage(from, { text: subMsg });
     return;

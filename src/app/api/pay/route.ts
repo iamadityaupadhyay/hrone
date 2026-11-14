@@ -16,8 +16,8 @@ export async function GET(req: NextRequest) {
     const planParam = searchParams.get('plan') || '149';
 
     const settings = await getSubscriptionSettings();
-    const upiId = (settings as any).upiId || process.env.UPI_ID || 'aditya@upi';
-    const upiName = (settings as any).upiName || process.env.UPI_NAME || 'HROne Attendance';
+    const upiId = (settings as any).upiId || process.env.UPI_ID || 'aditya.upadhyay.1@superyes';
+    const upiName = (settings as any).upiName || process.env.UPI_NAME || 'Aditya Upadhyay';
 
     const allEmps = await getAllEmployees();
     const employee = empParam
