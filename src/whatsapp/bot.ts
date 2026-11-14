@@ -815,34 +815,17 @@ async function handleCommand(
       return;
     }
 
-    // 2. User typed an address text
+    // 2. Reject typed text addresses — strictly require WhatsApp Location Pin
     if (cmd && cmd !== '__location_pin__') {
-      const coords = getCoordinatesForAddress(commandText.trim());
-      const db = await getDatabase();
-      await db.collection('employees').updateOne(
-        { employeeId: matchedEmp.employeeId },
-        {
-          $set: {
-            homeLocationEnabled: true,
-            homeLatitude: coords.latitude,
-            homeLongitude: coords.longitude,
-            homeGeoAccuracy: '15.000',
-            homeGeoLocation: commandText.trim(),
-            homeLocationActivatedAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          },
-        }
-      );
-      pendingHomeLocations.delete(from);
-
       await sock.sendMessage(from, {
         text:
-          `✅ *Home Location Saved!* 🏠🟢\n\n` +
-          `• *Employee:* ${matchedEmp.name}\n` +
-          `• *Location:* ${commandText.trim()}\n` +
-          `• *Coordinates:* ${coords.latitude}, ${coords.longitude}\n\n` +
-          `🎉 *WFH Mode is now ACTIVE!* All punches will use this home location until you say *home loc off*.\n\n` +
-          `👉 Reply *status* for card or *home loc off* when returning to office`,
+          `⚠️ *WhatsApp Location Pin Required!* 📍\n\n` +
+          `Text addresses are *disabled* to prevent location discrepancies.\n\n` +
+          `📌 *Please share your GPS Pin directly:*\n` +
+          `1. Tap *📎* (or *+* on iPhone) in this chat\n` +
+          `2. Tap *Location*\n` +
+          `3. Tap *Send your current location*\n\n` +
+          `👉 Reply *cancel* to abort.`,
       });
       return;
     }
@@ -917,42 +900,17 @@ async function handleCommand(
       return;
     }
 
-    // 2. User replied with a text address
+    // 2. Reject typed text addresses — strictly require WhatsApp Location Pin
     if (cmd && cmd !== '__location_pin__') {
-      const lower = commandText.trim().toLowerCase();
-      if (lower.includes('sector 142') || lower.includes('altf') || lower.includes('210-211')) {
-        await sock.sendMessage(from, {
-          text:
-            `⚠️ *Office Address Not Allowed!*\n\n` +
-            `Management requirement states Saturday location *must not* be the office address.\n\n` +
-            `Please share your *Home Location Pin (📎)* or reply with your home area address.`,
-        });
-        return;
-      }
-
-      const coords = getCoordinatesForAddress(commandText.trim());
-      const db = await getDatabase();
-      await db.collection('employees').updateOne(
-        { employeeId: matchedEmp.employeeId },
-        {
-          $set: {
-            saturdayLatitude: coords.latitude,
-            saturdayLongitude: coords.longitude,
-            saturdayGeoAccuracy: '15.000',
-            saturdayGeoLocation: commandText.trim(),
-            updatedAt: new Date().toISOString(),
-          },
-        }
-      );
-      pendingSaturdayLocations.delete(from);
-
       await sock.sendMessage(from, {
         text:
-          `✅ *Saturday Location Saved!* 📍\n\n` +
-          `• *Location:* ${commandText.trim()}\n` +
-          `• *Coordinates:* ${coords.latitude}, ${coords.longitude}\n\n` +
-          `Your Saturday punches will use this remote location instead of the office.\n\n` +
-          `👉 Reply *status* for card or *sat off* to disable`,
+          `⚠️ *WhatsApp Location Pin Required!* 📍\n\n` +
+          `Text addresses are *not accepted* for Saturday remote location.\n\n` +
+          `📌 *Please share your GPS Pin directly:*\n` +
+          `1. Tap *📎* (or *+* on iPhone) in this chat\n` +
+          `2. Tap *Location*\n` +
+          `3. Tap *Send your current location* (from home)\n\n` +
+          `👉 Reply *cancel* to abort or *skip* to keep existing.`,
       });
       return;
     }
@@ -1718,8 +1676,8 @@ async function handleCommand(
         `⚠️ *Saturday Location Required:*\n` +
         `Saturday punches *must not* show the office address.\n\n` +
         `📍 *Please send your Saturday location now:*\n` +
-        `• 📌 Tap *📎* (or *+* on iPhone) ➔ *Location* ➔ *Send your current location* (from home)\n` +
-        `• OR reply with your *Home Area / Address* (e.g. \`Gaur City, Greater Noida\` or \`Indirapuram, Ghaziabad\`)`;
+        `• 📌 Tap *📎* (or *+* on iPhone) ➔ *Location* ➔ *Send your current location* (from home)\n\n` +
+        `_(Note: Only WhatsApp GPS Pins are accepted; text addresses are disabled)_`;
       await sock.sendMessage(from, { text: msg });
     }
     return;
@@ -1759,7 +1717,7 @@ async function handleCommand(
           text:
             `📍 *Saturday Location for ${matchedEmp.name}:*\n_${matchedEmp.saturdayGeoLocation}_\n\n` +
             `• GPS: ${matchedEmp.saturdayLatitude || 'Auto'}, ${matchedEmp.saturdayLongitude || 'Auto'}\n\n` +
-            `👉 Share a *Location Pin 📎* or reply *sat loc <address>* to update.`,
+            `👉 Share a *Location Pin 📎* to update.`,
         });
       } else {
         pendingSaturdayLocations.set(from, { employeeId: matchedEmp.employeeId, timestamp: Date.now() });
@@ -1767,44 +1725,24 @@ async function handleCommand(
           text:
             `📍 *No Saturday location set yet for ${matchedEmp.name}.*\n\n` +
             `⚠️ Saturday location *must not* be the office address.\n\n` +
-            `Please share your location:\n` +
-            `• 📌 Tap *📎* ➔ *Location* to send GPS pin, OR\n` +
-            `• ✍️ Reply *sat loc <your home address>*`,
+            `Please share your *WhatsApp Pin Location*:\n` +
+            `• 📌 Tap *📎* ➔ *Location* to send GPS pin`,
         });
       }
       return;
     }
 
-    const lower = rawLoc.toLowerCase();
-    if (lower.includes('sector 142') || lower.includes('altf') || lower.includes('210-211')) {
-      await sock.sendMessage(from, {
-        text: `⚠️ Saturday location cannot be the office address. Please provide your home/remote location.`,
-      });
-      return;
-    }
-
-    const coords = getCoordinatesForAddress(rawLoc);
-    const db = await getDatabase();
-    await db.collection('employees').updateOne(
-      { employeeId: matchedEmp.employeeId },
-      {
-        $set: {
-          saturdayLatitude: coords.latitude,
-          saturdayLongitude: coords.longitude,
-          saturdayGeoAccuracy: '15.000',
-          saturdayGeoLocation: rawLoc,
-          updatedAt: new Date().toISOString(),
-        },
-      }
-    );
-    pendingSaturdayLocations.delete(from);
-
+    // Typed text is strictly disabled — require actual GPS pin
+    pendingSaturdayLocations.set(from, { employeeId: matchedEmp.employeeId, timestamp: Date.now() });
     await sock.sendMessage(from, {
       text:
-        `✅ *Saturday Location Updated!* 📍\n\n` +
-        `• *Location:* ${rawLoc}\n` +
-        `• *Coordinates:* ${coords.latitude}, ${coords.longitude}\n\n` +
-        `Saturday punches will use this remote address instead of the office.`,
+        `⚠️ *WhatsApp Location Pin Required!* 📍\n\n` +
+        `Text addresses are *not accepted* to prevent location discrepancies.\n\n` +
+        `📌 *Please share your GPS Pin directly:*\n` +
+        `1. Tap *📎* (or *+* on iPhone)\n` +
+        `2. Tap *Location*\n` +
+        `3. Tap *Send your current location* (from home)\n\n` +
+        `Once received, your Saturday location will be updated automatically.`,
     });
     return;
   }
@@ -1831,8 +1769,7 @@ async function handleCommand(
         `• *Saved Home Location:*\n_${matchedEmp.homeGeoLocation || 'Home Coordinates Saved'}_\n` +
         `• *Coordinates:* ${matchedEmp.homeLatitude}, ${matchedEmp.homeLongitude}\n\n` +
         `📍 *Share a WhatsApp Pin Location (📎)* to update your home location,\n` +
-        `OR reply *ok* to activate WFH using this saved home location,\n` +
-        `OR reply with your home area address (e.g. \`Indirapuram, Ghaziabad\`).\n\n` +
+        `OR reply *ok* to activate WFH using this saved home location.\n\n` +
         `Once activated, all attendance punches will punch from home until you reply *home loc off*.`;
       await sock.sendMessage(from, { text: msg });
     } else {
@@ -1840,9 +1777,9 @@ async function handleCommand(
         `🏠 *Work From Home (WFH) Mode Setup* 📍\n\n` +
         `• *Employee:* ${matchedEmp.name}\n\n` +
         `Please share your *WhatsApp Pin Location* now:\n` +
-        `• 📌 Tap *📎* (or *+* on iPhone) ➔ *Location* ➔ *Send your current location* (from home)\n` +
-        `• OR reply with your *Home Area / Address* (e.g. \`Sector 62, Noida\` or \`Gaur City, Greater Noida\`)\n\n` +
-        `Once pinned, all attendance punches (both scheduled auto-pilot & manual) will punch from this saved home location until you reply *home loc off*.`;
+        `• 📌 Tap *📎* (or *+* on iPhone) ➔ *Location* ➔ *Send your current location* (from home)\n\n` +
+        `Once pinned, all attendance punches (both scheduled auto-pilot & manual) will punch from this saved home location until you reply *home loc off*.\n\n` +
+        `_(Note: Only WhatsApp GPS Pins are accepted; text addresses are disabled)_`;
       await sock.sendMessage(from, { text: msg });
     }
     return;
@@ -1909,39 +1846,23 @@ async function handleCommand(
           text:
             `🏠 *No Home Location Saved Yet for ${matchedEmp.name}.*\n\n` +
             `Please share your *WhatsApp Pin Location*:\n` +
-            `• 📌 Tap *📎* ➔ *Location* to send GPS pin, OR\n` +
-            `• ✍️ Reply *home loc <your home address>*`,
+            `• 📌 Tap *📎* ➔ *Location* to send GPS pin`,
         });
       }
       return;
     }
 
-    const coords = getCoordinatesForAddress(rawLoc);
-    const db = await getDatabase();
-    await db.collection('employees').updateOne(
-      { employeeId: matchedEmp.employeeId },
-      {
-        $set: {
-          homeLocationEnabled: true,
-          homeLatitude: coords.latitude,
-          homeLongitude: coords.longitude,
-          homeGeoAccuracy: '15.000',
-          homeGeoLocation: rawLoc,
-          homeLocationActivatedAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-      }
-    );
-    pendingHomeLocations.delete(from);
-
+    // Typed text is strictly disabled — require actual GPS pin
+    pendingHomeLocations.set(from, { employeeId: matchedEmp.employeeId, timestamp: Date.now() });
     await sock.sendMessage(from, {
       text:
-        `✅ *Home Location Saved & WFH Activated!* 🏠🟢\n\n` +
-        `• *Employee:* ${matchedEmp.name}\n` +
-        `• *Location:* ${rawLoc}\n` +
-        `• *Coordinates:* ${coords.latitude}, ${coords.longitude}\n\n` +
-        `All punches will now punch from this home location until you reply *home loc off*.\n\n` +
-        `👉 Reply *status* for today's summary or *home loc off* when returning to office.`,
+        `⚠️ *WhatsApp Location Pin Required!* 🏠\n\n` +
+        `Text addresses are *not accepted* to prevent location discrepancies.\n\n` +
+        `📌 *Please share your GPS Pin directly:*\n` +
+        `1. Tap *📎* (or *+* on iPhone)\n` +
+        `2. Tap *Location*\n` +
+        `3. Tap *Send your current location* (from home)\n\n` +
+        `Once received, your home location will be saved automatically.`,
     });
     return;
   }
