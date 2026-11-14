@@ -1,18 +1,20 @@
 'use client';
 
-import { Clock, Plus, RotateCw, MessageSquare, Megaphone, Lock, LogOut } from 'lucide-react';
+import { Clock, Plus, RotateCw, MessageSquare, Megaphone, Lock, LogOut, CreditCard } from 'lucide-react';
 
 interface DashboardHeaderProps {
   istClock: string;
   loading: boolean;
   missingPasswordCount: number;
   whatsAppConnected: boolean;
+  subscriptionEnforced?: boolean;
   onRefresh: () => void;
   onOpenAddModal: () => void;
   onOpenWhatsAppModal: () => void;
   onOpenBroadcastModal: () => void;
   onOpenPasswordModal: () => void;
   onOpenTimingModal: () => void;
+  onOpenSubscriptionModal: () => void;
   onLogout: () => void;
 }
 
@@ -21,12 +23,14 @@ export function DashboardHeader({
   loading,
   missingPasswordCount,
   whatsAppConnected,
+  subscriptionEnforced = false,
   onRefresh,
   onOpenAddModal,
   onOpenWhatsAppModal,
   onOpenBroadcastModal,
   onOpenPasswordModal,
   onOpenTimingModal,
+  onOpenSubscriptionModal,
   onLogout,
 }: DashboardHeaderProps) {
   return (
@@ -93,6 +97,29 @@ export function DashboardHeader({
           >
             <Clock className="w-3.5 h-3.5 text-emerald-400" />
             <span className="hidden sm:inline">Timings</span>
+          </button>
+
+          {/* Subscription / Monetization Plans Button */}
+          <button
+            onClick={onOpenSubscriptionModal}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all ${
+              subscriptionEnforced
+                ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-300 hover:bg-emerald-500/15'
+                : 'bg-zinc-900/60 border-zinc-800 text-zinc-400 hover:text-zinc-200'
+            }`}
+            title="Subscription & Monetization Controls"
+          >
+            <CreditCard className={`w-3.5 h-3.5 ${subscriptionEnforced ? 'text-emerald-400' : 'text-zinc-400'}`} />
+            <span className="hidden sm:inline">Plans</span>
+            <span
+              className={`px-1.5 py-0.2 rounded text-[10px] font-mono font-medium ${
+                subscriptionEnforced
+                  ? 'bg-emerald-500/20 text-emerald-300'
+                  : 'bg-zinc-800 text-zinc-400'
+              }`}
+            >
+              {subscriptionEnforced ? 'ON' : 'OFF'}
+            </span>
           </button>
 
           {/* Password Management */}

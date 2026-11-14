@@ -8,6 +8,7 @@ import { executePunch, generateRandomPunchTime, getISTPunchTime, isTimeTriggerMa
 import { refreshHROneToken } from '../lib/hrone/token';
 import { DEFAULT_SCHEDULE_CONFIG } from '../lib/config/schedule';
 import { resolveSubscription } from '../lib/subscription';
+import { getSubscriptionSettings } from '../lib/db/settings';
 import { getDatabase } from '../lib/mongodb';
 import { EmployeeProfile } from '../lib/types/employee';
 import { isHolidayToday, syncAllActiveEmployeesHolidays } from '../lib/db/holidays';
@@ -30,6 +31,9 @@ async function runSchedulerTick() {
   ).getDay(); // 0: Sun, 1: Mon ... 6: Sat
 
   console.log(`[Worker] Tick at ${todayDateStr} ${currentIstTime} IST (Day of week: ${dayOfWeek})`);
+
+  // Sync latest subscription enforcement settings from DB
+  await getSubscriptionSettings();
 
   let employees: EmployeeProfile[] = [];
   try {

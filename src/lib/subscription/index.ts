@@ -15,10 +15,37 @@ export const PLAN_PRICES = {
   PRO_149: 149,
 };
 
+// Global enforcement state (default: FALSE = DEACTIVATED / Free access for all)
+let isEnforcedGlobal = false;
+
+export function isSubscriptionEnforced(): boolean {
+  return isEnforcedGlobal;
+}
+
+export function setSubscriptionEnforcedState(val: boolean) {
+  isEnforcedGlobal = val;
+}
+
 /**
- * Resolves current subscription status with expiry checks and Super Admin VIP pass
+ * Resolves current subscription status with expiry checks and Super Admin VIP pass.
+ * If global enforcement is OFF, grants full Pro access to everyone with zero restrictions.
  */
-export function resolveSubscription(emp: EmployeeProfile): SubscriptionEvaluation {
+export function resolveSubscription(emp: EmployeeProfile, enforced?: boolean): SubscriptionEvaluation {
+  const isEnforced = typeof enforced === 'boolean' ? enforced : isEnforcedGlobal;
+
+  // When monetization is DEACTIVATED, all users enjoy full Pro features without restrictions
+  if (!isEnforced) {
+    return {
+      status: 'LIFETIME_FREE',
+      plan: 'PRO_149',
+      isValid: true,
+      isPro: true,
+      daysRemaining: 9999,
+      formattedExpiry: 'Unlimited (Free Mode)',
+      isComped: true,
+    };
+  }
+
   // Super Admins or manually comped accounts get permanent Lifetime Free access to all Pro features
   if (emp.isSuperAdmin || emp.subscription?.isComped) {
     return {
@@ -87,8 +114,24 @@ export function canUseRegularize(emp: EmployeeProfile): boolean {
 /**
  * Returns formatted WhatsApp message displaying user's current subscription card
  */
-export function formatSubscriptionMessage(emp: EmployeeProfile, upiId: string = 'aditya@upi'): string {
-  const sub = resolveSubscription(emp);
+export function formatSubscriptionMessage(emp: EmployeeProfile, upiId: string = 'aditya@upi', enforced?: boolean): string {
+  const isEnforced = typeof enforced === 'boolean' ? enforced : isEnforcedGlobal;
+
+  if (!isEnforced) {
+    return (
+      `🎁 *Attendance Autopilot is Free for Everyone!* 🎉\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n` +
+      `👤 *Employee:* ${emp.name} (ID: ${emp.employeeId})\n` +
+      `📊 *Status:* 🟢 *Active & Unrestricted*\n\n` +
+      `All features (daily auto check-in/out, Saturday remote punch, WFH mode, and auto-regularize) are currently active with zero restrictions.\n\n` +
+      `💡 _Future Plans (Preview):_\n` +
+      `• *Standard (₹99/mo):* Auto-punch, Sat punch, Holiday pauses\n` +
+      `• *Pro (₹149/mo):* Everything + WFH GPS Pin Mode & Regularization\n\n` +
+      `👉 Reply *status* for today's card or *in* / *out* to punch.`
+    );
+  }
+
+  const sub = resolveSubscription(emp, true);
 
   const statusBadge =
     sub.status === 'LIFETIME_FREE'
@@ -133,3 +176,4 @@ export function formatSubscriptionMessage(emp: EmployeeProfile, upiId: string = 
     `_After paying, reply with your transaction UTR or screenshot to activate!_`
   );
 }
+

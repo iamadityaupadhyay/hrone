@@ -14,6 +14,7 @@ import { AddEmployeeModal } from '@/components/dashboard/AddEmployeeModal';
 import { PasswordManagementModal } from '@/components/dashboard/PasswordManagementModal';
 import { WhatsAppBotModal } from '@/components/dashboard/WhatsAppBotModal';
 import { TimingRulesModal } from '@/components/dashboard/TimingRulesModal';
+import { SubscriptionModal } from '@/components/dashboard/SubscriptionModal';
 import { DEFAULT_SCHEDULE_CONFIG } from '@/lib/config/schedule';
 import { CheckCircle2, AlertCircle, X } from 'lucide-react';
 
@@ -86,6 +87,8 @@ export default function AttendanceDashboard() {
   const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
   const [showBroadcastModal, setShowBroadcastModal] = useState(false);
   const [showTimingModal, setShowTimingModal] = useState(false);
+  const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
+  const [subscriptionEnforced, setSubscriptionEnforced] = useState(false);
 
   // Add Employee Form State
   const [importTab, setImportTab] = useState<'login' | 'curl' | 'manual'>('login');
@@ -218,10 +221,24 @@ export default function AttendanceDashboard() {
     }
   }, []);
 
+  // 5. Fetch Subscription Settings
+  const fetchSubscriptionSettings = useCallback(async () => {
+    try {
+      const res = await fetch('/api/settings/subscription', { cache: 'no-store' });
+      const data = await res.json();
+      if (data.success) {
+        setSubscriptionEnforced(Boolean(data.settings?.enforced));
+      }
+    } catch (err) {
+      console.error('Failed to fetch subscription settings:', err);
+    }
+  }, []);
+
   // Initial and Periodic Fetching
   useEffect(() => {
     fetchEmployees();
-  }, [fetchEmployees]);
+    fetchSubscriptionSettings();
+  }, [fetchEmployees, fetchSubscriptionSettings]);
 
   useEffect(() => {
     fetchLogs();
@@ -735,16 +752,19 @@ export default function AttendanceDashboard() {
         loading={employeeLoading}
         missingPasswordCount={fleetCounts.missingPasswordCount}
         whatsAppConnected={whatsAppStatus?.status === 'CONNECTED'}
+        subscriptionEnforced={subscriptionEnforced}
         onRefresh={() => {
           fetchEmployees();
           fetchLogs();
           fetchWhatsAppStatus();
+          fetchSubscriptionSettings();
         }}
         onOpenAddModal={() => setIsAddModalOpen(true)}
         onOpenWhatsAppModal={() => setShowWhatsAppModal(true)}
         onOpenBroadcastModal={() => setShowBroadcastModal(true)}
         onOpenPasswordModal={() => setShowPasswordModal(true)}
         onOpenTimingModal={() => setShowTimingModal(true)}
+        onOpenSubscriptionModal={() => setShowSubscriptionModal(true)}
         onLogout={handleLogout}
       />
 
@@ -920,6 +940,15 @@ export default function AttendanceDashboard() {
         onSaved={() => {
           fetchEmployees();
           setFeedback({ type: 'success', message: 'Punch timings updated successfully!' });
+        }}
+      />
+
+      <SubscriptionModal
+        isOpen={showSubscriptionModal}
+        onClose={() => setShowSubscriptionModal(false)}
+        onSaved={() => {
+          fetchSubscriptionSettings();
+          fetchEmployees();
         }}
       />
     </div>

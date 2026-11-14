@@ -26,7 +26,8 @@ import {
 import { getDatabase } from '../lib/mongodb';
 import { EmployeeProfile } from '../lib/types/employee';
 import { DEFAULT_SCHEDULE_CONFIG } from '../lib/config/schedule';
-import { resolveSubscription, formatSubscriptionMessage } from '../lib/subscription';
+import { resolveSubscription, formatSubscriptionMessage, isSubscriptionEnforced } from '../lib/subscription';
+import { getSubscriptionSettings } from '../lib/db/settings';
 
 const AUTH_DIR = path.resolve(process.cwd(), '.whatsapp_auth');
 let sock: WASocket | null = null;
@@ -415,6 +416,9 @@ async function handleCommand(
   locationData?: WhatsAppLocationData
 ) {
   if (!sock) return;
+
+  // Sync subscription enforcement state from DB
+  await getSubscriptionSettings();
 
   const cmd = commandText.trim().toLowerCase();
   console.log(`[WhatsApp Bot] Received command from ${senderName} (${from}): "${commandText}"`);
@@ -1181,9 +1185,13 @@ async function handleCommand(
     const payingUsers = proCount + basicCount;
     const mrr = proCount * 149 + basicCount * 99;
 
+    const enforced = isSubscriptionEnforced();
+    const modeBadge = enforced ? '🟢 *ACTIVE (Enforcing Plans)*' : '⏸️ *DEACTIVATED (Free Mode for All)*';
+
     const msg =
       `💳 *Fleet Subscription Console* 📊\n` +
       `━━━━━━━━━━━━━━━━━━━━\n` +
+      `⚙️ *System Mode:* ${modeBadge}\n` +
       `👥 Total Employees: *${allEmps.length}*\n` +
       `💰 Monthly Run Rate (MRR): *₹${mrr.toLocaleString('en-IN')}*\n` +
       `💳 Paid Subscribers: *${payingUsers}*\n\n` +
@@ -1194,6 +1202,7 @@ async function handleCommand(
       `• 🔴 Expired: *${expiredCount}*\n` +
       `• 👑 Lifetime Free / VIP: *${compedCount}*\n\n` +
       `👉 *Admin Controls:*\n` +
+      `• *Toggle via UI:* Open the "Plans" modal on the dashboard\n` +
       `• *admin activate <id> [99|149] [days]* – Activate sub\n` +
       `• *admin comp <id>* – Grant lifetime VIP pass`;
 
